@@ -2,7 +2,7 @@
 
 # Ring CFFI
 
-[license]: https://img.shields.io/github/license/ysdragon/cffi?style=for-the-badge&logo=opensourcehardware&label=License&logoColor=C0CAF5&labelColor=414868&color=8c73cc
+[license]: https://img.shields.io/github/license/ysdragon/ring-cffi?style=for-the-badge&logo=opensourcehardware&label=License&logoColor=C0CAF5&labelColor=414868&color=8c73cc
 [language-ring]: https://img.shields.io/badge/language-Ring-2D54CB.svg?style=for-the-badge&labelColor=414868
 [platform]: https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS%20|%20FreeBSD-8c73cc.svg?style=for-the-badge&labelColor=414868
 [version]: https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fysdragon%2Fring-cffi%2Fmaster%2Fpackage.ring&search=%3Aversion\s*%3D\s*"([^"]%2B)"&replace=%241&style=for-the-badge&label=version&labelColor=414868&color=7664C6
