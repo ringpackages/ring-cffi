@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # Allocate array
 pArr = oFFI.allocArray("int", 10)
@@ -39,3 +39,14 @@ func compare_ints pA, pB
     nA = cffi_get(pA, "int")
     nB = cffi_get(pB, "int")
     return nA - nB
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 oData = cffi_union("Data", [
     ["i", "int"],
@@ -17,3 +17,14 @@ oData = cffi_union("Data", [
 pU = cffi_union_new(oData)
 cffi_set(cffi_field(pU, oData, "i"), "int", 42)
 ? "as int: " + cffi_get(cffi_field(pU, oData, "i"), "int")
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

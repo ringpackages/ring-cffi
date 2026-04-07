@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # Allocate and use
 pInt = oFFI.alloc("int")
@@ -19,3 +19,14 @@ oFFI.ptrSet(pInt, "int", 42)
 # nullptr
 pNull = oFFI.nullptr()
 ? "nullptr check: " + oFFI.isNullPtr(pNull)
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

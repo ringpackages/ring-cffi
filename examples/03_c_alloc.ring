@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 pInt = cffi_new("int")
 cffi_set(pInt, "int", 999)
@@ -23,3 +23,14 @@ next
 pDbl = cffi_new("double")
 cffi_set(pDbl, "double", 3.14)
 ? "double: " + cffi_get(pDbl, "double")
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

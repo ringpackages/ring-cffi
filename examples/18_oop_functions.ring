@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # cFunc + invoke (OOP wrapper)
 oStrlen = oFFI.cFunc("strlen", "int", ["ptr"])
@@ -19,3 +19,14 @@ oAtoi = oFFI.funcPtr(pSym, "int", ["ptr"])
 # varFunc + varcall
 oPrintf = oFFI.varFunc("printf", "int", 1, ["ptr"])
 oFFI.varcall(oPrintf, [oFFI.string("OOP printf: %d + %d = %d\n"), 10, 20, 30])
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

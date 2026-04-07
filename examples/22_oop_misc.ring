@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # Enums
 oColor = oFFI.enum("Color", [
@@ -41,6 +41,17 @@ cDef = "
 "
 nParsed = oFFI.cdef(cDef)
 ? "Parsed " + nParsed + " definitions"
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok
 
 func my_handler nValue
     ? "callback got: " + nValue

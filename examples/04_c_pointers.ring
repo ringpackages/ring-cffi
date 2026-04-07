@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 pNull = cffi_nullptr()
 ? "nullptr is null: " + cffi_isnull(pNull)
@@ -21,3 +21,14 @@ pDeref = cffi_deref(pPtr, "ptr")
 # deref without explicit type (defaults to pointer)
 pDeref2 = cffi_deref(pPtr)
 ? "deref'd (no type): " + cffi_get(pDeref2, "int")
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

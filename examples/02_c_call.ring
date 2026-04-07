@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 oFunc = cffi_func(pLib, "strlen", "int", ["ptr"])
 pStr = cffi_string("Hello, World!")
@@ -15,3 +15,14 @@ oCmp = cffi_func(pLib, "strcmp", "int", ["ptr", "ptr"])
 
 oAtoi = cffi_func(pLib, "atoi", "int", ["ptr"])
 ? "atoi: " + cffi_invoke(oAtoi, cffi_string("42"))
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

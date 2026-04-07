@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # Struct
 oPoint = oFFI.defineStruct("Point", [
@@ -34,3 +34,14 @@ oData = oFFI.defineUnion("Data", [
 pU = oFFI.unionNew(oData)
 oFFI.ptrSet(oFFI.fieldPtr(pU, oData, "i"), "int", 99)
 ? "union.i = " + oFFI.ptrGet(oFFI.fieldPtr(pU, oData, "i"), "int")
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

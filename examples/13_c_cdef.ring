@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 cDef = "
     struct Point {
@@ -15,3 +15,14 @@ cDef = "
 
 nParsed = cffi_cdef(pLib, cDef)
 ? "Parsed " + nParsed + " definitions"
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

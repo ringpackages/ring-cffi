@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 pStr = cffi_string("Hello from Ring!")
 ? "C string: " + cffi_tostring(pStr)
@@ -16,3 +16,14 @@ pDest = cffi_new("char", 64)
 oStrcpy = cffi_func(pLib, "strcpy", "ptr", ["ptr", "ptr"])
 cffi_invoke(oStrcpy, pDest, pStr)
 ? "Copied: " + cffi_tostring(pDest)
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

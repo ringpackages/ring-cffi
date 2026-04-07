@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 oPoint = cffi_struct("Point", [
     ["x", "int"],
@@ -19,3 +19,14 @@ pPt = cffi_struct_new(oPoint)
 cffi_set(cffi_field(pPt, oPoint, "x"), "int", 100)
 cffi_set(cffi_field(pPt, oPoint, "y"), "int", 200)
 ? "Point(" + cffi_get(cffi_field(pPt, oPoint, "x"), "int") + ", " + cffi_get(cffi_field(pPt, oPoint, "y"), "int") + ")"
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

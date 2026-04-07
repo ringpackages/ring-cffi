@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-pLib = cffi_load("libc.so.6")
+pLib = cffi_load(getLibcPath())
 
 ? "sizeof(char)       = " + cffi_sizeof("char")
 ? "sizeof(short)      = " + cffi_sizeof("short")
@@ -17,3 +17,14 @@ pLib = cffi_load("libc.so.6")
 ? "sizeof(size_t)     = " + cffi_sizeof("size_t")
 ? "sizeof(int32_t)    = " + cffi_sizeof("int32_t")
 ? "sizeof(int64_t)    = " + cffi_sizeof("int64_t")
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok

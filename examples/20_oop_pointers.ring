@@ -4,7 +4,7 @@
  */
 load "cffi.ring"
 
-oFFI = new FFI("libc.so.6")
+oFFI = new FFI(getLibcPath())
 
 # Array via offset
 pArr = oFFI.allocArray("int", 3)
@@ -26,3 +26,14 @@ pDeref = oFFI.derefTyped(pPtr, "ptr")
 # Deref — raw (returns pointer)
 pDeref2 = oFFI.deref(pPtr)
 ? "raw deref: " + (not isNull(pDeref2))
+
+func getLibcPath
+    if isWindows()
+        return "msvcrt.dll"
+    but isFreeBSD()
+        return "libc.so.7"
+    but isMacOSX()
+        return "libSystem.B.dylib"
+    else
+        return "libc.so.6"
+    ok
