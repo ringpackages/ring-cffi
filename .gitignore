@@ -1,0 +1,23 @@
+# Ignore build directory
+build/
+
+# Object files
+*.o
+*.obj
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Clang specific
+.clangd
+
+# Others
+# tests/

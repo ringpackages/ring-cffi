@@ -1,0 +1,58 @@
+name: Ubuntu Build
+
+on:
+  workflow_call:
+    inputs:
+      ring-version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
+    strategy:
+      matrix:
+        include:
+        - arch: amd64
+          name: ubuntu-24.04-amd64
+        - arch: arm64
+          name: ubuntu-24.04-arm64
+
+    steps:
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build build-essential
+
+    - name: Checkout ring-cffi
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Clone Ring Source
+      uses: actions/checkout@v6
+      with:
+        repository: ringpackages/ringsrc
+        path: ring
+        ref: ${{ inputs.ring-version }}
+
+    - name: Build and Install Ring Language
+      run: |
+        cd ring/language
+        cmake . -DCMAKE_BUILD_TYPE=Release -GNinja
+        ninja install
+
+    - name: Set RING environment variable
+      run: echo "RING=$(pwd)/ring" >> $GITHUB_ENV
+
+    - name: Build ring-cffi lib
+      run: |
+        rm -rf lib
+        cmake . -DCMAKE_BUILD_TYPE=Release -GNinja
+        ninja
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ring-cffi-${{ matrix.name }}
+        path: lib

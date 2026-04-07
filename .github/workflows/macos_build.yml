@@ -1,0 +1,58 @@
+name: macOS Build
+
+on:
+  workflow_call:
+    inputs:
+      ring-version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+        - os: macos-15-intel
+          arch: amd64
+          name: macos-amd64
+        - os: macos-latest
+          arch: arm64
+          name: macos-arm64
+
+    steps:
+    - name: Checkout ring-cffi
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Clone Ring Source
+      uses: actions/checkout@v6
+      with:
+        repository: ringpackages/ringsrc
+        path: ring
+        ref: ${{ inputs.ring-version }}
+
+    - name: Install Ninja
+      run: brew install ninja
+
+    - name: Build and Install Ring Language
+      run: |
+        cd ring/language
+        cmake . -DCMAKE_BUILD_TYPE=Release -GNinja
+        ninja install
+
+    - name: Set RING environment variable
+      run: echo "RING=$(pwd)/ring" >> $GITHUB_ENV
+
+    - name: Build ring-cffi lib
+      run: |
+        rm -rf lib
+        cmake . -DCMAKE_BUILD_TYPE=Release -GNinja
+        ninja
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ring-cffi-${{ matrix.name }}
+        path: lib
