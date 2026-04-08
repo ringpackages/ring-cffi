@@ -306,7 +306,7 @@ These are the underlying native C extension functions exposed to Ring via `RING_
 | `cffi_strerror([nErr])` | `nErr`: number (optional) — error code | Get error string for errno |
 | `cffi_func(pLib, cName, cRetType, [aArgTypes])` | `pLib`: pointer — library handle, `cName`: string — function name, `cRetType`: string — return type, `aArgTypes`: list (optional) — argument type strings | Create a C function wrapper |
 | `cffi_funcptr(pPtr, cRetType, [aArgTypes])` | `pPtr`: pointer — function pointer, `cRetType`: string — return type, `aArgTypes`: list (optional) — argument type strings | Create wrapper from function pointer |
-| `cffi_invoke(pFunc, [aArgs])` | `pFunc`: pointer — function handle, `aArgs`: list (optional) — arguments | Call a C function wrapper |
+| `cffi_invoke(oFunc, [aArgs])` | `oFunc`: pointer — function handle, `aArgs`: list (optional) — arguments | Call a C function wrapper |
 | `cffi_sym(pLib, cName)` | `pLib`: pointer — library handle, `cName`: string — symbol name | Look up symbol in loaded library |
 | `cffi_get(pPtr, cType, [nIndex])` | `pPtr`: pointer — memory pointer, `cType`: string — type name, `nIndex`: number (optional) — array index | Read value from pointer |
 | `cffi_set(pPtr, cType, value, [nIndex])` | `pPtr`: pointer — memory pointer, `cType`: string — type name, `value`: any — value to write, `nIndex`: number (optional) — array index | Write value to pointer |
@@ -325,7 +325,7 @@ These are the underlying native C extension functions exposed to Ring via `RING_
 | `cffi_union_new(pType)` | `pType`: pointer — union definition | Allocate union instance |
 | `cffi_union_size(pType)` | `pType`: pointer — union type | Get union size in bytes |
 | `cffi_varfunc(pLib, cName, cRetType, nFixedCount, [aArgTypes])` | `pLib`: pointer — library handle, `cName`: string — function name, `cRetType`: string — return type, `nFixedCount`: number — fixed arg count, `aArgTypes`: list (optional) — argument type strings | Create variadic function wrapper |
-| `cffi_varcall(pFunc, [aArgs])` | `pFunc`: pointer — variadic function handle, `aArgs`: list (optional) — arguments | Call a variadic function wrapper |
+| `cffi_varcall(oFunc, [aArgs])` | `oFunc`: pointer — variadic function handle, `aArgs`: list (optional) — arguments | Call a variadic function wrapper |
 | `cffi_cdef(pLib, cDeclarations)` | `pLib`: pointer — library handle (can be NULL), `cDeclarations`: string — C definition source | Parse C definition string |
 
 ### Supported C Types
@@ -399,7 +399,7 @@ Check the [`examples/`](examples/) directory for usage examples covering:
 |---|---------|-------------|
 | 01 | 📥 Library Loading | `cffi_load` — loading shared libraries |
 | 02 | 📞 Function Calls | `cffi_func` — calling C functions |
-| 03 | 💾 Memory Allocation | `cffi_new` / `cffi_alloc` — allocating C memory |
+| 03 | 💾 Memory Allocation | `cffi_new` — allocating C memory |
 | 04 | 🔢 Pointer Operations | `cffi_get`, `cffi_set`, `cffi_deref`, `cffi_offset` |
 | 05 | 📝 C Strings | `cffi_string`, `cffi_tostring` — string handling |
 | 06 | 🔍 Symbol Lookup | `cffi_sym` — resolving library symbols |
