@@ -368,8 +368,8 @@ class CFFITest
 	func test_sprintf
 		pBuf = cffi_new("char", 64)
 		pFmt = cffi_string("Value: %d")
-		oFunc = cffi_func(oFFI.library(), "sprintf", "int", ["ptr", "ptr", "int"])
-		cffi_invoke(oFunc, pBuf, pFmt, 123)
+		oFunc = cffi_varfunc(oFFI.library(), "sprintf", "int", ["ptr", "ptr"])
+		cffi_varcall(oFunc, pBuf, pFmt, 123)
 		cResult = cffi_tostring(pBuf)
 		assertEq(cResult, "Value: 123", "sprintf should format string")
 
