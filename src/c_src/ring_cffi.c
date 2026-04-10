@@ -2675,6 +2675,7 @@ static void cparser_init(CParser *p, FFI_Context *ctx, FFI_Library *lib, const c
 	p->pos = p->src;
 	p->error[0] = '\0';
 	p->result_list = ring_list_new_gc(ctx->ring_state, 0);
+	p->decl_count = 0;
 }
 
 static void cparser_free(CParser *p)
@@ -2758,22 +2759,57 @@ static bool cparser_number(CParser *p, int64_t *val)
 	return true;
 }
 
+static void cparser_skip_attributes(CParser *p)
+{
+	while (true) {
+		cparser_skip_ws(p);
+
+		if (cparser_match(p, "const") || cparser_match(p, "volatile") ||
+			cparser_match(p, "restrict") || cparser_match(p, "__restrict") ||
+			cparser_match(p, "extern") || cparser_match(p, "static") ||
+			cparser_match(p, "inline") || cparser_match(p, "__inline") ||
+			cparser_match(p, "__inline__") || cparser_match(p, "__forceinline") ||
+			cparser_match(p, "__stdcall") || cparser_match(p, "_stdcall") ||
+			cparser_match(p, "__cdecl") || cparser_match(p, "_cdecl") ||
+			cparser_match(p, "__fastcall") || cparser_match(p, "_fastcall") ||
+			cparser_match(p, "__thiscall") || cparser_match(p, "_thiscall") ||
+			cparser_match(p, "__ptr32") || cparser_match(p, "__ptr64") ||
+			cparser_match(p, "WINAPI") || cparser_match(p, "APIENTRY") ||
+			cparser_match(p, "CALLBACK") || cparser_match(p, "WINAPIV")) {
+			continue;
+		}
+
+		if (cparser_match(p, "__declspec") || cparser_match(p, "__attribute__")) {
+			cparser_skip_ws(p);
+			if (*p->pos == '(') {
+				int depth = 0;
+				do {
+					if (*p->pos == '(')
+						depth++;
+					else if (*p->pos == ')')
+						depth--;
+					else if (*p->pos == '\0')
+						break;
+					p->pos++;
+				} while (depth > 0);
+			}
+			continue;
+		}
+		break;
+	}
+}
+
 static void cparser_type(CParser *p, char *out, size_t sz)
 {
-	cparser_skip_ws(p);
+	cparser_skip_attributes(p);
 	size_t i = 0;
 	out[0] = '\0';
-
-	while (cparser_match(p, "const") || cparser_match(p, "volatile") ||
-		   cparser_match(p, "restrict") || cparser_match(p, "__restrict")) {
-		cparser_skip_ws(p);
-	}
 
 	bool has_signed = false, has_unsigned = false;
 	int long_count = 0;
 	bool has_short = false;
 	bool has_struct = false, has_union = false, has_enum = false;
-	char base_type[64] = "";
+	char base_type[128] = "";
 
 	while (true) {
 		cparser_skip_ws(p);
@@ -2805,14 +2841,42 @@ static void cparser_type(CParser *p, char *out, size_t sz)
 			has_enum = true;
 			continue;
 		}
-		if (cparser_match(p, "const") || cparser_match(p, "volatile"))
+
+		char *save = p->pos;
+		cparser_skip_attributes(p);
+		if (save != p->pos)
 			continue;
+
 		break;
 	}
 
-	cparser_skip_ws(p);
+	cparser_skip_attributes(p);
+
+	bool has_modifier = has_signed || has_unsigned || long_count > 0 || has_short;
+	bool has_tag = has_struct || has_union || has_enum;
+
+	char peek_ident[128] = "";
+	char *save_pos = p->pos;
 	if (isalpha(*p->pos) || *p->pos == '_') {
-		cparser_ident(p, base_type, sizeof(base_type));
+		cparser_ident(p, peek_ident, sizeof(peek_ident));
+	}
+
+	bool consume_ident = false;
+	if (has_tag) {
+		consume_ident = true;
+	} else if (has_modifier) {
+		if (strcmp(peek_ident, "int") == 0 || strcmp(peek_ident, "char") == 0 ||
+			strcmp(peek_ident, "double") == 0) {
+			consume_ident = true;
+		}
+	} else {
+		consume_ident = true;
+	}
+
+	if (consume_ident) {
+		strcpy(base_type, peek_ident);
+	} else {
+		p->pos = save_pos;
 	}
 
 	if (has_struct && base_type[0]) {
@@ -2844,23 +2908,13 @@ static void cparser_type(CParser *p, char *out, size_t sz)
 		snprintf(out, sz, "int");
 	}
 
-	cparser_skip_ws(p);
-	while (cparser_match(p, "const") || cparser_match(p, "volatile") ||
-		   cparser_match(p, "restrict") || cparser_match(p, "__restrict")) {
-		cparser_skip_ws(p);
-	}
-
-	cparser_skip_ws(p);
+	cparser_skip_attributes(p);
 	i = strlen(out);
 	while (*p->pos == '*') {
 		if (i < sz - 1)
 			out[i++] = '*';
 		p->pos++;
-		cparser_skip_ws(p);
-		while (cparser_match(p, "const") || cparser_match(p, "volatile") ||
-			   cparser_match(p, "restrict") || cparser_match(p, "__restrict")) {
-			cparser_skip_ws(p);
-		}
+		cparser_skip_attributes(p);
 	}
 	out[i] = '\0';
 }
@@ -2895,6 +2949,7 @@ static bool cparser_parse_struct(CParser *p, bool is_union)
 
 		if (*p->pos == '(') {
 			p->pos++;
+			cparser_skip_attributes(p);
 			cparser_skip_ws(p);
 			while (*p->pos == '*')
 				p->pos++;
@@ -2972,6 +3027,7 @@ static bool cparser_parse_struct(CParser *p, bool is_union)
 			ut->size = FFI_ALIGN(ut->size, ut->alignment);
 			ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->unions, name, ut);
 			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, ut);
+			p->decl_count++;
 		} else {
 			FFI_StructType *st = ffi_struct_define(p->ctx, name);
 			int fcount = ring_list_getsize(fields);
@@ -2986,6 +3042,7 @@ static bool cparser_parse_struct(CParser *p, bool is_union)
 			}
 			ffi_struct_finalize(p->ctx, st);
 			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, st);
+			p->decl_count++;
 		}
 	}
 
@@ -3075,6 +3132,7 @@ static bool cparser_parse_enum(CParser *p)
 
 		ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->enums, name, et);
 		ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, et);
+		p->decl_count++;
 	}
 
 	return true;
@@ -3140,15 +3198,29 @@ static bool cparser_parse_typedef(CParser *p)
 
 	if (*p->pos == '(') {
 		p->pos++;
-		cparser_skip_ws(p);
-		while (*p->pos == '*')
+		cparser_skip_attributes(p);
+		while (*p->pos == '*') {
+			if (strlen(base_type) < sizeof(base_type) - 2)
+				strcat(base_type, "*");
 			p->pos++;
+			cparser_skip_attributes(p);
+		}
 		char alias[128];
 		cparser_ident(p, alias, sizeof(alias));
+		while (*p->pos && *p->pos != ')')
+			p->pos++;
+		if (*p->pos == ')')
+			p->pos++;
 		while (*p->pos && *p->pos != ';')
 			p->pos++;
 		if (*p->pos == ';')
 			p->pos++;
+
+		FFI_Type *t = ffi_type_parse(p->ctx, base_type);
+		if (t) {
+			ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->type_cache, alias, t);
+		}
+		p->decl_count++;
 		return true;
 	}
 
@@ -3168,25 +3240,34 @@ static bool cparser_parse_typedef(CParser *p)
 
 	cparser_match_exact(p, ";");
 
+	FFI_Type *t = ffi_type_parse(p->ctx, base_type);
+	if (t) {
+		ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->type_cache, alias, t);
+	}
+	p->decl_count++;
+
 	return true;
 }
 
 static bool cparser_parse_function(CParser *p)
 {
+	cparser_skip_attributes(p);
+
 	char ret_type[128];
 	cparser_type(p, ret_type, sizeof(ret_type));
 	if (!ret_type[0])
 		return false;
 
-	cparser_skip_ws(p);
+	cparser_skip_attributes(p);
 
 	if (*p->pos == '(') {
 		p->pos++;
-		cparser_skip_ws(p);
+		cparser_skip_attributes(p);
 		while (*p->pos == '*') {
 			if (strlen(ret_type) < sizeof(ret_type) - 2)
 				strcat(ret_type, "*");
 			p->pos++;
+			cparser_skip_attributes(p);
 		}
 		char func_name[128];
 		cparser_ident(p, func_name, sizeof(func_name));
@@ -3199,8 +3280,6 @@ static bool cparser_parse_function(CParser *p)
 
 	char func_name[128];
 	if (!cparser_ident(p, func_name, sizeof(func_name))) {
-		/* If the identifier from the function pointer typedef block
-		 * was already consumed, reuse alias as func_name */
 		return false;
 	}
 
@@ -3241,7 +3320,7 @@ static bool cparser_parse_function(CParser *p)
 		cparser_skip_ws(p);
 		if (*p->pos == '(') {
 			p->pos++;
-			cparser_skip_ws(p);
+			cparser_skip_attributes(p);
 			while (*p->pos == '*')
 				p->pos++;
 			char pname[64];
@@ -3289,12 +3368,16 @@ finish_func:
 	cparser_skip_ws(p);
 	cparser_match_exact(p, ";");
 
-	if (!p->lib)
+	if (!p->lib) {
+		p->decl_count++;
 		return true;
+	}
 
 	void *fptr = ffi_library_symbol(p->lib, func_name);
-	if (!fptr)
+	if (!fptr) {
+		p->decl_count++;
 		return true;
+	}
 
 	if (is_variadic) {
 		FFI_Function *func =
@@ -3317,6 +3400,7 @@ finish_func:
 		func->type = ft;
 
 		ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, func);
+		p->decl_count++;
 	} else {
 		FFI_Type **pcopy = NULL;
 		if (param_count > 0) {
@@ -3329,7 +3413,9 @@ finish_func:
 			ffi_function_create(p->ctx, p->lib, func_name, ret_ffi, pcopy, param_count);
 		if (func) {
 			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, func);
+			p->decl_count++;
 		} else {
+			p->decl_count++;
 			if (pcopy)
 				ring_state_free(p->ctx->ring_state, pcopy);
 		}
@@ -3341,7 +3427,7 @@ finish_func:
 static void cparser_parse(CParser *p)
 {
 	while (*p->pos) {
-		cparser_skip_ws(p);
+		cparser_skip_attributes(p);
 		if (!*p->pos)
 			break;
 
@@ -3443,7 +3529,7 @@ RING_FUNC(ring_cffi_cdef)
 	cparser_init(&parser, ctx, lib, decl);
 	cparser_parse(&parser);
 
-	int count = ring_list_getsize(parser.result_list);
+	int count = parser.decl_count;
 
 	cparser_free(&parser);
 
