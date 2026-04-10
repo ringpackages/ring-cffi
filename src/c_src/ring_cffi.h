@@ -7,10 +7,10 @@
 #ifndef RING_CFFI_H
 #define RING_CFFI_H
 
-#include <stdint.h>
 #include "ring.h"
 #include <ffi.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -226,6 +226,20 @@ struct FFI_Context {
 
 /* Per-VM context storage using Ring's VM API */
 extern FFI_TLS FFI_Context *g_ffi_ctx;
+
+/* ============================================================
+ * C Parser
+ * ============================================================ */
+
+typedef struct CParser {
+	FFI_Context *ctx;
+	FFI_Library *lib;
+	char *src;
+	char *pos;
+	char error[256];
+	List *result_list;
+	int decl_count;
+} CParser;
 
 /* ============================================================
  * Allocated Memory Tracking

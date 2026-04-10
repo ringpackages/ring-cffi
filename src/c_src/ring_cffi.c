@@ -2665,15 +2665,6 @@ RING_FUNC(ring_cffi_union_size)
 	RING_API_RETNUMBER((double)type->size);
 }
 
-typedef struct CParser {
-	FFI_Context *ctx;
-	FFI_Library *lib;
-	char *src;
-	char *pos;
-	char error[256];
-	List *result_list;
-} CParser;
-
 static void cparser_init(CParser *p, FFI_Context *ctx, FFI_Library *lib, const char *src)
 {
 	p->ctx = ctx;
