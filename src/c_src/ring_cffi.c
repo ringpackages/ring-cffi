@@ -2980,6 +2980,7 @@ static bool cparser_parse_struct(CParser *p, bool is_union)
 			}
 			ut->size = FFI_ALIGN(ut->size, ut->alignment);
 			ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->unions, name, ut);
+			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, ut);
 		} else {
 			FFI_StructType *st = ffi_struct_define(p->ctx, name);
 			int fcount = ring_list_getsize(fields);
@@ -2993,6 +2994,7 @@ static bool cparser_parse_struct(CParser *p, bool is_union)
 				}
 			}
 			ffi_struct_finalize(p->ctx, st);
+			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, st);
 		}
 	}
 
@@ -3081,6 +3083,7 @@ static bool cparser_parse_enum(CParser *p)
 		}
 
 		ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->enums, name, et);
+		ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, et);
 	}
 
 	return true;
