@@ -225,7 +225,56 @@ class CFFITest
 		? ""
 
 		? "Testing C Definition Parser..."
-		run("test_cdef_struct", :test_cdef_struct)
+		run("single function declaration", :test_single_function)
+		run("multiple function declarations", :test_multiple_functions)
+		run("function with void parameter", :test_function_void_param)
+		run("function with pointer parameters", :test_function_pointer_params)
+		run("function with multiple parameters", :test_function_multiple_params)
+		run("function with const char*", :test_function_const_char_star)
+		run("variadic function declaration", :test_variadic_function)
+		run("double return type function", :test_double_return_function)
+		run("void return type function", :test_void_return_function)
+		run("long return type function", :test_long_return_function)
+		run("simple struct with int fields", :test_struct_simple)
+		run("struct with mixed field types", :test_struct_mixed_types)
+		run("struct with pointer field", :test_struct_pointer_field)
+		run("struct with array field", :test_struct_array_field)
+		run("multiple struct declarations", :test_struct_multiple)
+		run("struct with bitfield", :test_struct_bitfield)
+		run("struct with function pointer field", :test_struct_func_pointer_field)
+		run("simple union", :test_union_simple)
+		run("union with mixed types", :test_union_mixed)
+		run("multiple unions", :test_union_multiple)
+		run("enum with explicit values", :test_enum_explicit_values)
+		run("enum with auto-increment", :test_enum_auto_increment)
+		run("enum with mixed explicit/auto", :test_enum_mixed_auto_explicit)
+		run("simple typedef", :test_typedef_simple)
+		run("multiple typedefs", :test_typedef_multiple)
+		run("typedef struct", :test_typedef_struct)
+		run("typedef union", :test_typedef_union)
+		run("typedef enum", :test_typedef_enum)
+		run("function pointer typedef", :test_typedef_func_pointer)
+		run("array typedef", :test_typedef_array)
+		run("unsigned types", :test_unsigned_types)
+		run("signed type", :test_signed_type)
+		run("long long type", :test_long_long)
+		run("long double type", :test_long_double)
+		run("line comments", :test_line_comment)
+		run("block comments", :test_block_comment)
+		run("NULL lib struct", :test_null_lib_struct)
+		run("NULL lib functions", :test_null_lib_functions)
+		run("mixed struct and function", :test_mixed_struct_and_function)
+		run("mixed enum and struct", :test_mixed_enum_struct)
+		run("mixed all types", :test_mixed_all_types)
+		run("extra whitespace", :test_extra_whitespace)
+		run("compact declaration", :test_compact_declaration)
+		run("double and triple pointers", :test_deep_pointers)
+		run("opaque pointer typedef", :test_opaque_pointer)
+		run("array of pointers", :test_array_of_pointers)
+		run("nested structs", :test_nested_structs)
+		run("forward declarations", :test_forward_declarations)
+		run("calling conventions (ignored keywords)", :test_calling_conventions)
+		run("anonymous unions", :test_anonymous_unions)
 		? ""
 
 		? "Testing Error Handling..."
@@ -631,10 +680,401 @@ class CFFITest
 
 	# ==================== C Definition Parser Tests ====================
 
-	func test_cdef_struct
-		cDef = "struct Point { int x; int y; };"
-		oDef = cffi_cdef(oFFI.library(), cDef)
-		assert(true, "cffi_cdef should parse struct definition")
+	func test_single_function
+		n = cffi_cdef(oFFI.library(), "int abs(int);")
+		assertEq(n, 1, "single function count")
+
+	func test_multiple_functions
+		n = cffi_cdef(oFFI.library(), "
+			size_t strlen(const char*);
+			int abs(int);
+		")
+		assertEq(n, 2, "multiple functions count")
+
+	func test_function_void_param
+		n = cffi_cdef(oFFI.library(), "int getpid(void);")
+		assertEq(n, 1, "void param function count")
+
+	func test_function_pointer_params
+		n = cffi_cdef(oFFI.library(), "
+			void* malloc(size_t);
+			void free(void*);
+		")
+		assertEq(n, 2, "pointer params count")
+
+	func test_function_multiple_params
+		n = cffi_cdef(oFFI.library(), "int memcmp(const void*, const void*, size_t);")
+		assertEq(n, 1, "multi-param function count")
+
+	func test_function_const_char_star
+		n = cffi_cdef(oFFI.library(), "int strcmp(const char*, const char*);")
+		assertEq(n, 1, "const char* params count")
+
+	func test_variadic_function
+		n = cffi_cdef(oFFI.library(), "int printf(const char*, ...);")
+		assertEq(n, 1, "variadic function count")
+
+	func test_double_return_function
+		n = cffi_cdef(oFFI.library(), "double atof(const char*);")
+		assertEq(n, 1, "double return function count")
+
+	func test_void_return_function
+		n = cffi_cdef(oFFI.library(), "void exit(int);")
+		assertEq(n, 1, "void return function count")
+
+	func test_long_return_function
+		n = cffi_cdef(oFFI.library(), "long strtol(const char*, char**, int);")
+		assertEq(n, 1, "long return function count")
+
+	func test_struct_simple
+		n = cffi_cdef(oFFI.library(), "
+			struct Point2D {
+				int x;
+				int y;
+			};
+		")
+		assertEq(n, 1, "simple struct count")
+		t = cffi_typeof("Point2D")
+		assert(cffi_struct_size(t) > 0, "Point2D size > 0")
+
+	func test_struct_mixed_types
+		n = cffi_cdef(oFFI.library(), "
+			struct MixedData {
+				int i;
+				double d;
+				char c;
+			};
+		")
+		assertEq(n, 1, "mixed struct count")
+
+	func test_struct_pointer_field
+		n = cffi_cdef(oFFI.library(), "
+			struct StringWrapper {
+				char* str;
+				int length;
+			};
+		")
+		assertEq(n, 1, "struct with pointer count")
+
+	func test_struct_array_field
+		n = cffi_cdef(oFFI.library(), "
+			struct Buffer {
+				char data[256];
+				int size;
+			};
+		")
+		assertEq(n, 1, "struct with array count")
+
+	func test_struct_multiple
+		n = cffi_cdef(oFFI.library(), "
+			struct Vec2 {
+				float x;
+				float y;
+			};
+			struct Vec3 {
+				float x;
+				float y;
+				float z;
+			};
+		")
+		assertEq(n, 2, "multiple structs count")
+
+	func test_struct_bitfield
+		n = cffi_cdef(oFFI.library(), "
+			struct BitField {
+				unsigned int a : 4;
+				unsigned int b : 8;
+				int c;
+			};
+		")
+		assertEq(n, 1, "struct with bitfield count")
+
+	func test_struct_func_pointer_field
+		n = cffi_cdef(oFFI.library(), "
+			struct Operations {
+				int (*add)(int, int);
+				int (*sub)(int, int);
+				int result;
+			};
+		")
+		assertEq(n, 1, "struct with func ptr count")
+
+	func test_union_simple
+		n = cffi_cdef(oFFI.library(), "
+			union Number {
+				int i;
+				float f;
+				double d;
+			};
+		")
+		assertEq(n, 1, "simple union count")
+
+	func test_union_mixed
+		n = cffi_cdef(oFFI.library(), "
+			union DataValue {
+				int i;
+				char c;
+				long l;
+			};
+		")
+		assertEq(n, 1, "mixed union count")
+
+	func test_union_multiple
+		n = cffi_cdef(oFFI.library(), "
+			union IntFloat {
+				int i;
+				float f;
+			};
+			union CharInt {
+				char c;
+				int i;
+			};
+		")
+		assertEq(n, 2, "multiple unions count")
+
+	func test_enum_explicit_values
+		n = cffi_cdef(oFFI.library(), "
+			enum Status {
+				OK = 0,
+				ERROR = 1,
+				PENDING = 2
+			};
+		")
+		assertEq(n, 1, "explicit enum count")
+		t = cffi_typeof("Status")
+		assertEq(cffi_enum_value(t, "OK"), 0, "Status::OK value")
+		assertEq(cffi_enum_value(t, "ERROR"), 1, "Status::ERROR value")
+
+	func test_enum_auto_increment
+		n = cffi_cdef(oFFI.library(), "
+			enum Direction {
+				NORTH,
+				EAST,
+				SOUTH,
+				WEST
+			};
+		")
+		assertEq(n, 1, "auto enum count")
+		t = cffi_typeof("Direction")
+		assertEq(cffi_enum_value(t, "NORTH"), 0, "NORTH value")
+		assertEq(cffi_enum_value(t, "EAST"), 1, "EAST value")
+		assertEq(cffi_enum_value(t, "SOUTH"), 2, "SOUTH value")
+		assertEq(cffi_enum_value(t, "WEST"), 3, "WEST value")
+
+	func test_enum_mixed_auto_explicit
+		n = cffi_cdef(oFFI.library(), "
+			enum Priority {
+				LOW = 1,
+				MEDIUM,
+				HIGH = 10,
+				CRITICAL
+			};
+		")
+		assertEq(n, 1, "mixed enum count")
+		t = cffi_typeof("Priority")
+		assertEq(cffi_enum_value(t, "LOW"), 1, "LOW value")
+		assertEq(cffi_enum_value(t, "MEDIUM"), 2, "MEDIUM auto-increment")
+		assertEq(cffi_enum_value(t, "HIGH"), 10, "HIGH value")
+		assertEq(cffi_enum_value(t, "CRITICAL"), 11, "CRITICAL auto-increment")
+
+	func test_typedef_simple
+		n = cffi_cdef(oFFI.library(), "typedef unsigned long ulong;")
+		assertEq(n, 1, "simple typedef count")
+
+	func test_typedef_multiple
+		n = cffi_cdef(oFFI.library(), "
+			typedef int int32_alias;
+			typedef double real;
+		")
+		assertEq(n, 2, "multiple typedefs count")
+
+	func test_typedef_struct
+		n = cffi_cdef(oFFI.library(), "
+			typedef struct {
+				int x;
+				int y;
+			} Point;
+		")
+		assertEq(n, 1, "typedef struct count")
+		t = cffi_typeof("Point")
+		assert(cffi_struct_size(t) > 0, "Point typedef size > 0")
+
+	func test_typedef_union
+		n = cffi_cdef(oFFI.library(), "
+			typedef union {
+				int i;
+				float f;
+			} Number;
+		")
+		assertEq(n, 1, "typedef union count")
+
+	func test_typedef_enum
+		n = cffi_cdef(oFFI.library(), "
+			typedef enum {
+				FALSE_VAL = 0,
+				TRUE_VAL = 1
+			} BoolAlias;
+		")
+		assertEq(n, 1, "typedef enum count")
+
+	func test_typedef_func_pointer
+		n = cffi_cdef(oFFI.library(), "typedef void (*callback)(int);")
+		assertEq(n, 1, "function pointer typedef count")
+
+	func test_typedef_array
+		n = cffi_cdef(oFFI.library(), "typedef int matrix[16];")
+		assertEq(n, 1, "array typedef count")
+
+	func test_unsigned_types
+		n = cffi_cdef(oFFI.library(), "
+			unsigned int foo_func(unsigned int);
+			unsigned char bar_func(unsigned char);
+		")
+		assertEq(n, 2, "unsigned types count")
+
+	func test_signed_type
+		n = cffi_cdef(oFFI.library(), "signed char test_signed_char(void);")
+		assertEq(n, 1, "signed char count")
+
+	func test_long_long
+		n = cffi_cdef(oFFI.library(), "long long test_long_long(void);")
+		assertEq(n, 1, "long long count")
+
+	func test_long_double
+		n = cffi_cdef(oFFI.library(), "long double test_long_double(void);")
+		assertEq(n, 1, "long double count")
+
+	func test_line_comment
+		n = cffi_cdef(oFFI.library(), "
+			// This is a comment
+			int abs_comment(int);
+		")
+		assertEq(n, 1, "line comment handling")
+
+	func test_block_comment
+		n = cffi_cdef(oFFI.library(), "
+			/* This is a block comment
+			   spanning multiple lines */
+			int abs_block(int);
+		")
+		assertEq(n, 1, "block comment handling")
+
+	func test_null_lib_struct
+		nullLib = cffi_nullptr()
+		n = cffi_cdef(nullLib, "
+			struct TestNull {
+				int a;
+				int b;
+			};
+		")
+		assertEq(n, 1, "NULL lib struct count")
+
+	func test_null_lib_functions
+		nullLib = cffi_nullptr()
+		n = cffi_cdef(nullLib, "
+			int func1(int);
+			double func2(double);
+			void func3(void);
+		")
+		assertEq(n, 3, "NULL lib functions count")
+
+	func test_mixed_struct_and_function
+		n = cffi_cdef(oFFI.library(), "
+			struct Config {
+				int width;
+				int height;
+				char* title;
+			};
+			int setup(struct Config*);
+		")
+		assertEq(n, 2, "struct and function count")
+
+	func test_mixed_enum_struct
+		n = cffi_cdef(oFFI.library(), "
+			enum Mode { MODE_A = 1, MODE_B = 2 };
+			struct Settings {
+				int mode;
+				int value;
+			};
+		")
+		assertEq(n, 2, "enum and struct count")
+
+	func test_mixed_all_types
+		n = cffi_cdef(oFFI.library(), "
+			int mixed_func(int);
+			struct MixedAll {
+				int x;
+				char* name;
+			};
+			union MixedAll {
+				int i;
+				float f;
+			};
+			enum MixedAllEnum { MA = 0, MB = 1 };
+		")
+		assertEq(n, 4, "all types mixed count")
+
+	func test_extra_whitespace
+		n = cffi_cdef(oFFI.library(), "  int    abs_ws   (  int  )  ;  ")
+		assertEq(n, 1, "whitespace handling")
+
+	func test_compact_declaration
+		n = cffi_cdef(oFFI.library(), "int abs_compact(int);")
+		assertEq(n, 1, "compact declaration")
+
+	func test_deep_pointers
+		n = cffi_cdef(oFFI.library(), "void do_magic(char*** ptr);")
+		assertEq(n, 1, "triple pointer parsing")
+
+	func test_opaque_pointer
+		n = cffi_cdef(oFFI.library(), "
+			struct OpaqueHandle;
+			typedef struct OpaqueHandle* Handle;
+		")
+		assert(n = 1 OR n = 2, "opaque pointer typedef")
+
+	func test_array_of_pointers
+		n = cffi_cdef(oFFI.library(), "int main(int argc, char *argv[]);")
+		assertEq(n, 1, "array of pointers")
+
+	func test_nested_structs
+		n = cffi_cdef(oFFI.library(), "
+			struct Outer {
+				struct Inner {
+					int id;
+				} in;
+				int value;
+			};
+		")
+		assertEq(n, 1, "nested struct parsing")
+
+	func test_forward_declarations
+		n = cffi_cdef(oFFI.library(), "
+			struct Node;
+			struct Node {
+				struct Node* next;
+				int data;
+			};
+		")
+		assert(n >= 1, "forward declaration")
+
+	func test_calling_conventions
+		n = cffi_cdef(oFFI.library(), "
+			extern void __stdcall Sleep(unsigned long dwMilliseconds);
+			__declspec(dllexport) int do_something(void);
+		")
+		assertEq(n, 2, "ignore C-specific attributes")
+
+	func test_anonymous_unions
+		n = cffi_cdef(oFFI.library(), "
+			struct Vector3 {
+				union {
+					struct { float x, y, z; };
+					float v[3];
+				};
+			};
+		")
+		assertEq(n, 1, "anonymous union inside struct")
 
 	# ==================== Error Handling Tests ====================
 
