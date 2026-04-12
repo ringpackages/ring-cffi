@@ -15,7 +15,8 @@
 #ifdef _WIN32
 #include <windows.h>
 typedef HMODULE FFI_LibHandle;
-#define FFI_LoadLib(path) LoadLibraryA(path)
+FFI_LibHandle FFI_LoadLib_UTF8(const char *path);
+#define FFI_LoadLib(path) FFI_LoadLib_UTF8(path)
 #define FFI_GetSym(h, name) GetProcAddress(h, name)
 #define FFI_CloseLib(h) FreeLibrary(h)
 #define FFI_LibError() "LoadLibrary failed"
@@ -175,6 +176,8 @@ struct FFI_Callback {
 	VM *vm;
 	ffi_cif cif;
 	ffi_type **ffi_arg_types;
+	char *call_buf;
+	char **arg_var_names;
 };
 
 /* ============================================================
@@ -207,10 +210,7 @@ struct FFI_Context {
 	List *libraries;
 
 	/* Callbacks */
-	List *callbacks;
-
-	/* Memory tracking */
-	List *allocations;
+	HashTable *callbacks;
 
 	/* Error handling */
 	char error_msg[1024];
@@ -240,17 +240,6 @@ typedef struct CParser {
 	List *result_list;
 	int decl_count;
 } CParser;
-
-/* ============================================================
- * Allocated Memory Tracking
- * ============================================================ */
-
-typedef struct FFI_Allocation {
-	void *ptr;
-	size_t size;
-	FFI_Type *type;
-	FFI_Context *ctx;
-} FFI_Allocation;
 
 /* ============================================================
  * API Functions - Context Management
