@@ -174,6 +174,7 @@ struct FFI_Callback {
 	FFI_FuncType *type;
 	char *ring_func_name;
 	VM *vm;
+	FFI_Context *ctx;
 	ffi_cif cif;
 	ffi_type **ffi_arg_types;
 	char *call_buf;
