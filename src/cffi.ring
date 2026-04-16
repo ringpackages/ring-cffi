@@ -193,6 +193,31 @@ class FFI
         cffi_set(pPtr, cType, value)
 
     /**
+     * Reads a 64-bit integer from a pointer as a string to avoid precision loss.
+     * @param pPtr Pointer to read from.
+     * @param nIndex Optional array index.
+     * @return The 64-bit integer as a Ring string.
+     */
+    func i64Get pPtr, nIndex
+        if isNull(nIndex)
+            return cffi_get_i64(pPtr)
+        ok
+        return cffi_get_i64(pPtr, nIndex)
+
+    /**
+     * Writes a 64-bit integer to a pointer from a string to avoid precision loss.
+     * @param pPtr Pointer to write to.
+     * @param cValue 64-bit integer as a Ring string.
+     * @param nIndex Optional array index.
+     */
+    func i64Set pPtr, cValue, nIndex
+        if isNull(nIndex)
+            cffi_set_i64(pPtr, cValue)
+        else
+            cffi_set_i64(pPtr, cValue, nIndex)
+        ok
+
+    /**
      * Dereferences a pointer and returns the pointed-to pointer.
      * @param pPtr Pointer to dereference.
      * @return The dereferenced pointer.
