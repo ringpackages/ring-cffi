@@ -22,6 +22,14 @@ pDeref = cffi_deref(pPtr, "ptr")
 pDeref2 = cffi_deref(pPtr)
 ? "deref'd (no type): " + cffi_get(pDeref2, "int")
 
+# 64-bit Integers (handled as strings to avoid precision loss)
+? nl + "--- 64-bit Integers ---"
+pI64 = cffi_new("int64")
+cVal = "9223372036854775807" # Max int64
+cffi_set_i64(pI64, cVal)
+? "Set i64: " + cVal
+? "Get i64: " + cffi_get_i64(pI64)
+
 func getLibcPath
     if isWindows()
         return "msvcrt.dll"
