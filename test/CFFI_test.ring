@@ -330,6 +330,12 @@ class CFFITest
 		run("test_sizeof_long", :test_sizeof_long)
 		? ""
 
+		? "Testing Dynamic Binding..."
+		run("test_bind_method", :test_bind_method)
+		run("test_bind_native", :test_bind_native)
+		run("test_bind_all", :test_bind_all)
+		? ""
+
 		# Cleanup
 		cleanup()
 
@@ -1383,3 +1389,25 @@ class CFFITest
 				assertEq(nSize, 4, "sizeof(long) should be 4 on 32-bit Unix")
 			ok
 		ok
+
+	# ==================== Dynamic Binding Tests ====================
+
+	func test_bind_method
+		oTest = new FFI(cLibcPath)
+		oTest.bind("atoi", "int", ["ptr"])
+		pStr = oTest.string("999")
+		nResult = oTest.atoi(pStr)
+		assertEq(nResult, 999, "bind() should create method for atoi")
+
+	func test_bind_native
+		oTest = new FFI(cLibcPath)
+		oTest.bindNative("labs", "long", ["long"])
+		nResult = labs(-123456)
+		assertEq(nResult, 123456, "bindNative() should register native labs()")
+
+	func test_bind_all
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int abs(int); long labs(long); int atoi(const char*);")
+		nCount = oTest.bindAll()
+		assert(nCount >= 2, "bindAll() should register at least 2 functions")
+		assertEq(abs(-99), 99, "bindAll() should register native abs()")
