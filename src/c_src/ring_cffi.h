@@ -30,21 +30,12 @@ typedef void *FFI_LibHandle;
 #endif
 
 /* ============================================================
- * Forward Declarations
- * ============================================================ */
-typedef struct FFI_Context FFI_Context;
-typedef struct FFI_Library FFI_Library;
-typedef struct FFI_Type FFI_Type;
-typedef struct FFI_StructType FFI_StructType;
-typedef struct FFI_UnionType FFI_UnionType;
-typedef struct FFI_EnumType FFI_EnumType;
-typedef struct FFI_FuncType FFI_FuncType;
-typedef struct FFI_Function FFI_Function;
-typedef struct FFI_Callback FFI_Callback;
-
-/* ============================================================
  * Type System
  * ============================================================ */
+
+/* Forward declarations for circular references */
+typedef struct FFI_Type FFI_Type;
+typedef struct FFI_Context FFI_Context;
 
 /* Type kinds */
 typedef enum {
@@ -96,7 +87,7 @@ typedef struct FFI_StructField {
 } FFI_StructField;
 
 /* Struct type definition */
-struct FFI_StructType {
+typedef struct FFI_StructType {
 	char *name;
 	FFI_StructField *fields;
 	int field_count;
@@ -104,16 +95,16 @@ struct FFI_StructType {
 	size_t alignment;
 	ffi_type ffi_type_def;
 	ffi_type **ffi_elements;
-};
+} FFI_StructType;
 
 /* Union type definition */
-struct FFI_UnionType {
+typedef struct FFI_UnionType {
 	char *name;
 	FFI_StructField *fields;
 	int field_count;
 	size_t size;
 	size_t alignment;
-};
+} FFI_UnionType;
 
 /* Enum constant */
 typedef struct FFI_EnumConst {
@@ -123,23 +114,23 @@ typedef struct FFI_EnumConst {
 } FFI_EnumConst;
 
 /* Enum type definition */
-struct FFI_EnumType {
+typedef struct FFI_EnumType {
 	char *name;
 	FFI_EnumConst *constants;
 	int const_count;
-};
+} FFI_EnumType;
 
 /* Function type definition */
-struct FFI_FuncType {
+typedef struct FFI_FuncType {
 	FFI_Type *return_type;
 	FFI_Type **param_types;
 	int param_count;
 	bool is_variadic;
 	ffi_cif cif;
-};
+} FFI_FuncType;
 
 /* Generic type wrapper */
-struct FFI_Type {
+typedef struct FFI_Type {
 	FFI_TypeKind kind;
 	int pointer_depth;
 
@@ -154,21 +145,21 @@ struct FFI_Type {
 	ffi_type *ffi_type_ptr;
 	size_t size;
 	size_t alignment;
-};
+} FFI_Type;
 
 /* ============================================================
  * Function and Callback
  * ============================================================ */
 
-struct FFI_Function {
+typedef struct FFI_Function {
 	void *func_ptr;
 	FFI_FuncType *type;
 	ffi_cif cif;
 	ffi_type **ffi_arg_types;
 	bool cif_prepared;
-};
+} FFI_Function;
 
-struct FFI_Callback {
+typedef struct FFI_Callback {
 	ffi_closure *closure;
 	void *code_ptr;
 	FFI_FuncType *type;
@@ -178,23 +169,32 @@ struct FFI_Callback {
 	ffi_cif cif;
 	ffi_type **ffi_arg_types;
 	char *call_buf;
-};
+} FFI_Callback;
+
+typedef struct FFI_BoundFunc {
+	FFI_Context *ctx;
+	FFI_Function *func;
+	ffi_closure *closure;
+	void *code_ptr;
+	ffi_cif cif;
+	ffi_type **arg_types;
+} FFI_BoundFunc;
 
 /* ============================================================
  * Library Handle
  * ============================================================ */
 
-struct FFI_Library {
+typedef struct FFI_Library {
 	char *path;
 	FFI_LibHandle handle;
 	RingState *ring_state;
-};
+} FFI_Library;
 
 /* ============================================================
  * Main Context - Holds all FFI state
  * ============================================================ */
 
-struct FFI_Context {
+typedef struct FFI_Context {
 	RingState *ring_state;
 	VM *vm;
 
@@ -215,7 +215,7 @@ struct FFI_Context {
 	/* Error handling */
 	char error_msg[1024];
 	int error_code;
-};
+} FFI_Context;
 
 /* Thread-local context storage */
 #ifdef _WIN32

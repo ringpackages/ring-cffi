@@ -3871,29 +3871,77 @@ RING_FUNC(ring_cffi_varcall)
 	ffi_push_return_value((VM *)pPointer, &result, func->type->return_type);
 }
 
-static void ffi_trampoline(void *pPointer)
+static void ffi_gc_free_bound_func(void *state, void *ptr)
 {
-	VM *pVM = (VM *)pPointer;
-	FFI_Context *ctx = get_or_create_context(pPointer);
-	if (!ctx) {
-		RING_API_ERROR("no FFI context");
+	FFI_BoundFunc *bf = (FFI_BoundFunc *)ptr;
+	if (!bf)
 		return;
+	if (bf->closure)
+		ffi_closure_free(bf->closure);
+	if (bf->arg_types)
+		ring_state_free((RingState *)state, bf->arg_types);
+	ring_state_free((RingState *)state, bf);
+}
+
+static void ffi_bound_handler(ffi_cif *cif, void *ret, void **args, void *user_data)
+{
+	FFI_BoundFunc *bf = (FFI_BoundFunc *)user_data;
+	if (!bf || !bf->ctx || !bf->func)
+		return;
+
+	VM *pVM = (VM *)(*(void **)args[0]);
+
+	FFI_Context *old_ctx = g_ffi_ctx;
+	g_ffi_ctx = bf->ctx;
+
+	ffi_call_function(bf->ctx, pVM, bf->func, NULL, 1);
+
+	g_ffi_ctx = old_ctx;
+}
+
+static void *ffi_create_trampoline(FFI_Context *ctx, FFI_Function *func)
+{
+	FFI_BoundFunc *bf = (FFI_BoundFunc *)ring_state_malloc(ctx->ring_state, sizeof(FFI_BoundFunc));
+	if (!bf)
+		return NULL;
+	memset(bf, 0, sizeof(FFI_BoundFunc));
+
+	bf->ctx = ctx;
+	bf->func = func;
+
+	bf->closure = ffi_closure_alloc(sizeof(ffi_closure), &bf->code_ptr);
+	if (!bf->closure) {
+		ring_state_free(ctx->ring_state, bf);
+		return NULL;
 	}
 
-	const char *func_name = pVM->aFuncCall[pVM->nCurrentFuncCall].cName;
-	if (!func_name) {
-		RING_API_ERROR("cannot determine function name");
-		return;
+	bf->arg_types = (ffi_type **)ring_state_malloc(ctx->ring_state, sizeof(ffi_type *));
+	if (!bf->arg_types) {
+		ffi_closure_free(bf->closure);
+		ring_state_free(ctx->ring_state, bf);
+		return NULL;
+	}
+	bf->arg_types[0] = &ffi_type_pointer;
+
+	ffi_status status = ffi_prep_cif(&bf->cif, FFI_DEFAULT_ABI, 1, &ffi_type_void, bf->arg_types);
+	if (status != FFI_OK) {
+		ring_state_free(ctx->ring_state, bf->arg_types);
+		ffi_closure_free(bf->closure);
+		ring_state_free(ctx->ring_state, bf);
+		return NULL;
 	}
 
-	FFI_Function *func =
-		(FFI_Function *)ring_hashtable_findpointer(ctx->cdef_funcs, (char *)func_name);
-	if (!func || !func->cif_prepared) {
-		RING_API_ERROR("bound function not found");
-		return;
+	status = ffi_prep_closure_loc(bf->closure, &bf->cif, ffi_bound_handler, bf, bf->code_ptr);
+	if (status != FFI_OK) {
+		ring_state_free(ctx->ring_state, bf->arg_types);
+		ffi_closure_free(bf->closure);
+		ring_state_free(ctx->ring_state, bf);
+		return NULL;
 	}
 
-	ffi_call_function(ctx, pVM, func, NULL, 1);
+	ring_list_addcustomringpointer_gc(ctx->ring_state, ctx->gc_list, bf, ffi_gc_free_bound_func);
+
+	return bf->code_ptr;
 }
 
 RING_FUNC(ring_cffi_bind)
@@ -3913,9 +3961,13 @@ RING_FUNC(ring_cffi_bind)
 				if (item->nItemType == RING_HASHITEMTYPE_POINTER && item->cKey) {
 					FFI_Function *func = (FFI_Function *)item->HashValue.pValue;
 					if (func && func->cif_prepared) {
-						ring_vm_funcregister2(vm->pRingState, item->cKey,
-											  ffi_trampoline);
-						count++;
+						void *trampoline = ffi_create_trampoline(ctx, func);
+						if (trampoline) {
+							char *lower_name = ffi_lowerdup(ctx, item->cKey);
+							ring_vm_funcregister2(vm->pRingState, lower_name,
+												  (void (*)(void *))trampoline);
+							count++;
+						}
 					}
 				}
 				item = item->pNext;
@@ -3998,7 +4050,13 @@ RING_FUNC(ring_cffi_bind)
 
 	ring_hashtable_newpointer_gc(ctx->ring_state, ctx->cdef_funcs, lower_name, func);
 
-	ring_vm_funcregister2(vm->pRingState, lower_name, ffi_trampoline);
+	void *trampoline = ffi_create_trampoline(ctx, func);
+	if (!trampoline) {
+		RING_API_ERROR("ffi_bind: out of memory creating trampoline");
+		return;
+	}
+
+	ring_vm_funcregister2(vm->pRingState, lower_name, (void (*)(void *))trampoline);
 
 	RING_API_RETNUMBER(1);
 }
