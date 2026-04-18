@@ -165,6 +165,28 @@ static size_t ffi_get_primitive_size(FFI_TypeKind kind)
 	}
 }
 
+static bool ffi_is_64bit_int(FFI_TypeKind kind)
+{
+	switch (kind) {
+	case FFI_KIND_INT64:
+	case FFI_KIND_UINT64:
+	case FFI_KIND_LONGLONG:
+	case FFI_KIND_ULONGLONG:
+		return true;
+	case FFI_KIND_SIZE_T:
+	case FFI_KIND_SSIZE_T:
+	case FFI_KIND_PTRDIFF_T:
+	case FFI_KIND_INTPTR_T:
+	case FFI_KIND_UINTPTR_T:
+		return sizeof(void *) == 8;
+	case FFI_KIND_LONG:
+	case FFI_KIND_ULONG:
+		return sizeof(long) == 8;
+	default:
+		return false;
+	}
+}
+
 FFI_Context *ffi_context_new(RingState *state, VM *vm)
 {
 	FFI_Context *ctx = (FFI_Context *)ring_state_malloc(state, sizeof(FFI_Context));
@@ -590,6 +612,17 @@ static void ffi_push_return_value(VM *vm, void *result_ptr, FFI_Type *rtype)
 		ring_vm_api_retnumber(vm, *(double *)result_ptr);
 	} else if (rtype->kind == FFI_KIND_LONGDOUBLE) {
 		ring_vm_api_retnumber(vm, (double)*(long double *)result_ptr);
+	} else if (ffi_is_64bit_int(rtype->kind)) {
+		char buf[32];
+		if (rtype->kind == FFI_KIND_UINT64 || rtype->kind == FFI_KIND_ULONGLONG ||
+			(rtype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+			(rtype->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+			(rtype->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+			snprintf(buf, sizeof(buf), "%llu", (unsigned long long)*(uint64_t *)result_ptr);
+		} else {
+			snprintf(buf, sizeof(buf), "%lld", (long long)*(int64_t *)result_ptr);
+		}
+		ring_vm_api_retstring(vm, buf);
 	} else {
 		ffi_arg res = *(ffi_arg *)result_ptr;
 		switch (rtype->kind) {
@@ -619,19 +652,6 @@ static void ffi_push_return_value(VM *vm, void *result_ptr, FFI_Type *rtype)
 		case FFI_KIND_UINT:
 			ring_vm_api_retnumber(vm, (double)(uint32_t)res);
 			break;
-		case FFI_KIND_INT64:
-		case FFI_KIND_LONGLONG:
-		case FFI_KIND_SSIZE_T:
-		case FFI_KIND_INTPTR_T:
-		case FFI_KIND_PTRDIFF_T:
-			ring_vm_api_retnumber(vm, (double)(int64_t)res);
-			break;
-		case FFI_KIND_UINT64:
-		case FFI_KIND_ULONGLONG:
-		case FFI_KIND_SIZE_T:
-		case FFI_KIND_UINTPTR_T:
-			ring_vm_api_retnumber(vm, (double)(uint64_t)res);
-			break;
 		case FFI_KIND_LONG:
 			ring_vm_api_retnumber(vm, (double)(long)res);
 			break;
@@ -649,6 +669,17 @@ static void ffi_ret_value(VM *vm, void *src, FFI_Type *type)
 {
 	if (type->kind == FFI_KIND_POINTER || type->pointer_depth > 0) {
 		ring_vm_api_retcpointer(vm, *(void **)src, "FFI_Ptr");
+	} else if (ffi_is_64bit_int(type->kind)) {
+		char buf[32];
+		if (type->kind == FFI_KIND_UINT64 || type->kind == FFI_KIND_ULONGLONG ||
+			(type->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+			(type->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+			(type->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+			snprintf(buf, sizeof(buf), "%llu", (unsigned long long)*(uint64_t *)src);
+		} else {
+			snprintf(buf, sizeof(buf), "%lld", (long long)*(int64_t *)src);
+		}
+		ring_vm_api_retstring(vm, buf);
 	} else {
 		ring_vm_api_retnumber(vm, ffi_read_typed_value(src, type));
 	}
@@ -698,14 +729,6 @@ static void ffi_gc_free_callback(void *state, void *ptr)
 
 	if (cb->closure)
 		ffi_closure_free(cb->closure);
-
-	if (cb->arg_var_names) {
-		for (int i = 0; i < cb->type->param_count; i++) {
-			if (cb->arg_var_names[i])
-				ring_state_free((RingState *)state, cb->arg_var_names[i]);
-		}
-		ring_state_free((RingState *)state, cb->arg_var_names);
-	}
 
 	if (cb->type) {
 		if (cb->type->param_types)
@@ -1150,9 +1173,8 @@ FFI_Type *ffi_type_parse(FFI_Context *ctx, const char *type_str)
 	return result;
 }
 
-static FFI_Function *ffi_function_create(FFI_Context *ctx, void *func_ptr,
-										 FFI_Type *ret_type, FFI_Type **param_types,
-										 int param_count)
+static FFI_Function *ffi_function_create(FFI_Context *ctx, void *func_ptr, FFI_Type *ret_type,
+										 FFI_Type **param_types, int param_count)
 {
 	if (!func_ptr) {
 		ffi_set_error(ctx, "Invalid function pointer");
@@ -1534,9 +1556,22 @@ RING_FUNC(ring_cffi_invoke)
 				ffi_write_typed_value(storage_ptr, ptype, val);
 				storage_ptr += ptype->size;
 			} else if (aArgs ? ring_list_isstring(aArgs, i + 1) : RING_API_ISSTRING(param_idx)) {
-				*(const char **)storage_ptr =
+				const char *str =
 					aArgs ? ring_list_getstring(aArgs, i + 1) : RING_API_GETSTRING(param_idx);
-				storage_ptr += sizeof(void *);
+				if (ffi_is_64bit_int(ptype->kind)) {
+					if (ptype->kind == FFI_KIND_UINT64 || ptype->kind == FFI_KIND_ULONGLONG ||
+						(ptype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+						(ptype->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+						(ptype->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+						*(uint64_t *)storage_ptr = (uint64_t)strtoull(str, NULL, 10);
+					} else {
+						*(int64_t *)storage_ptr = (int64_t)strtoll(str, NULL, 10);
+					}
+					storage_ptr += ptype->size;
+				} else {
+					*(const char **)storage_ptr = str;
+					storage_ptr += sizeof(void *);
+				}
 			} else {
 				RING_API_ERROR("ffi_invoke: unsupported argument type");
 				ring_state_free(ctx->ring_state, arg_storage);
@@ -1694,6 +1729,16 @@ RING_FUNC(ring_cffi_set)
 	} else if (RING_API_ISNUMBER(3)) {
 		double val = RING_API_GETNUMBER(3);
 		ffi_write_typed_value(elem_ptr, type, val);
+	} else if (RING_API_ISSTRING(3) && ffi_is_64bit_int(type->kind)) {
+		const char *str = RING_API_GETSTRING(3);
+		if (type->kind == FFI_KIND_UINT64 || type->kind == FFI_KIND_ULONGLONG ||
+			(type->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+			(type->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+			(type->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+			*(uint64_t *)elem_ptr = (uint64_t)strtoull(str, NULL, 10);
+		} else {
+			*(int64_t *)elem_ptr = (int64_t)strtoll(str, NULL, 10);
+		}
 	} else {
 		RING_API_ERROR("ffi_set: value type not supported");
 		return;
@@ -2080,54 +2125,81 @@ static void ffi_callback_handler(ffi_cif *cif, void *ret, void **args, void *use
 	FFI_FuncType *ftype = cb->type;
 	RingState *state = vm->pRingState;
 
+	/* Push arguments to a reentrant stack list */
+	List *cb_args_stack = ring_state_findvar(state, "__cffi_cb_args");
+	if (!cb_args_stack) {
+		cb_args_stack = ring_state_newvar(state, "__cffi_cb_args");
+		ring_list_setint_gc(state, cb_args_stack, RING_VAR_TYPE, RING_VM_LIST);
+		ring_list_setlist_gc(state, cb_args_stack, RING_VAR_VALUE);
+	}
+	List *stack_list = ring_list_getlist(cb_args_stack, RING_VAR_VALUE);
+	List *current_args = ring_list_newlist_gc(state, stack_list);
+
 	for (int i = 0; i < cif->nargs; i++) {
 		FFI_Type *ptype = ftype->param_types[i];
-		List *var = ring_state_findvar(state, cb->arg_var_names[i]);
-		if (!var)
-			var = ring_state_newvar(state, cb->arg_var_names[i]);
 
 		if (ptype->kind == FFI_KIND_POINTER || ptype->pointer_depth > 0) {
 			void *val = *(void **)args[i];
-			ring_list_setint_gc(state, var, RING_VAR_TYPE, 3);
-			ring_list_setlist_gc(state, var, RING_VAR_VALUE);
-			List *ptr_list = ring_list_getlist(var, RING_VAR_VALUE);
-			ring_list_deleteallitems_gc(state, ptr_list);
+			List *ptr_list = ring_list_newlist_gc(state, current_args);
 			ring_list_addpointer_gc(state, ptr_list, val);
 			ring_list_addstring_gc(state, ptr_list, "FFI_Ptr");
 			ring_list_addint_gc(state, ptr_list, 0);
+		} else if (ffi_is_64bit_int(ptype->kind)) {
+			char buf[32];
+			if (ptype->kind == FFI_KIND_UINT64 || ptype->kind == FFI_KIND_ULONGLONG ||
+				(ptype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+				(ptype->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+				(ptype->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+				snprintf(buf, sizeof(buf), "%llu", (unsigned long long)*(uint64_t *)args[i]);
+			} else {
+				snprintf(buf, sizeof(buf), "%lld", (long long)*(int64_t *)args[i]);
+			}
+			ring_list_addstring_gc(state, current_args, buf);
 		} else {
 			double dval = ffi_read_typed_value(args[i], ptype);
-			ring_list_setint_gc(state, var, RING_VAR_TYPE, 2);
-			ring_list_setdouble_gc(state, var, RING_VAR_VALUE, dval);
+			ring_list_adddouble_gc(state, current_args, dval);
 		}
 	}
 
 	ring_vm_runcode(vm, cb->call_buf);
 
 	if (ftype->return_type->kind != FFI_KIND_VOID) {
-		List *result_var_list = ring_state_findvar(state, "__cb_result");
+		List *cb_res_stack = ring_state_findvar(state, "__cffi_cb_res");
+		if (cb_res_stack && ring_list_islist(cb_res_stack, RING_VAR_VALUE)) {
+			List *res_list = ring_list_getlist(cb_res_stack, RING_VAR_VALUE);
+			int res_idx = ring_list_getsize(stack_list); /* The index we just used */
 
-		if (result_var_list && ring_list_getsize(result_var_list) > 0) {
-			FFI_Type *rtype = ftype->return_type;
-			if (rtype->kind == FFI_KIND_POINTER || rtype->pointer_depth > 0) {
-				if (ring_list_islist(result_var_list, RING_VAR_VALUE)) {
-					List *ptr_list = ring_list_getlist(result_var_list, RING_VAR_VALUE);
-					if (ring_list_getsize(ptr_list) >= 1) {
+			if (res_idx > 0 && res_idx <= ring_list_getsize(res_list)) {
+				FFI_Type *rtype = ftype->return_type;
+				if (rtype->kind == FFI_KIND_POINTER || rtype->pointer_depth > 0) {
+					if (ring_list_islist(res_list, res_idx)) {
+						List *ptr_list = ring_list_getlist(res_list, res_idx);
 						*(void **)ret = ring_list_getpointer(ptr_list, 1);
+					} else if (ring_list_ispointer(res_list, res_idx)) {
+						*(void **)ret = ring_list_getpointer(res_list, res_idx);
 					} else {
 						*(void **)ret = NULL;
 					}
-				} else if (ring_list_ispointer(result_var_list, RING_VAR_VALUE)) {
-					*(void **)ret = ring_list_getpointer(result_var_list, RING_VAR_VALUE);
-				} else {
-					*(void **)ret = NULL;
+				} else if (ffi_is_64bit_int(rtype->kind) && ring_list_isstring(res_list, res_idx)) {
+					const char *str = ring_list_getstring(res_list, res_idx);
+					if (rtype->kind == FFI_KIND_UINT64 || rtype->kind == FFI_KIND_ULONGLONG ||
+						(rtype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+						(rtype->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+						(rtype->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+						*(uint64_t *)ret = (uint64_t)strtoull(str, NULL, 10);
+					} else {
+						*(int64_t *)ret = (int64_t)strtoll(str, NULL, 10);
+					}
+				} else if (ring_list_isdouble(res_list, res_idx)) {
+					double val = ring_list_getdouble(res_list, res_idx);
+					ffi_write_typed_value(ret, rtype, val);
 				}
-			} else {
-				double val = ring_list_getdouble(result_var_list, RING_VAR_VALUE);
-				ffi_write_typed_value(ret, rtype, val);
 			}
 		}
 	}
+
+	/* Pop the stack */
+	ring_list_deleteitem_gc(state, stack_list, ring_list_getsize(stack_list));
 
 	g_ffi_ctx = old_ctx;
 }
@@ -2135,8 +2207,8 @@ static void ffi_callback_handler(ffi_cif *cif, void *ret, void **args, void *use
 RING_FUNC(ring_cffi_callback)
 {
 	if (RING_API_PARACOUNT < 3) {
-		RING_API_ERROR("ffi_callback(ring_func, rettype, [argtypes...]) "
-					   "requires at least 3 parameters");
+		RING_API_ERROR(
+			"ffi_callback(ring_func, rettype, [argtypes...]) requires at least 3 parameters");
 		return;
 	}
 
@@ -2257,22 +2329,21 @@ RING_FUNC(ring_cffi_callback)
 
 	cb->ffi_arg_types = arg_types;
 
-	/* Build cached call string and arg variable names */
-	cb->call_buf = NULL;
-	cb->arg_var_names = NULL;
-
-	if (param_count > 0) {
-		cb->arg_var_names =
-			(char **)ring_state_calloc(ctx->ring_state, (size_t)param_count, sizeof(char *));
-	}
-
+	/* Build cached reentrant call string */
 	char tmp_buf[4096];
 	char *tp = tmp_buf;
 	size_t trem = sizeof(tmp_buf);
 	int tn;
 
+	tn = snprintf(tp, trem,
+				  "if isNULL('__cffi_cb_res') __cffi_cb_res = [] ok\n"
+				  "__cb_idx = len(__cffi_cb_args)\n"
+				  "if len(__cffi_cb_res) < __cb_idx add(__cffi_cb_res, 0) ok\n");
+	tp += tn;
+	trem -= tn;
+
 	if (ret_type->kind != FFI_KIND_VOID) {
-		tn = snprintf(tp, trem, "__cb_result = ");
+		tn = snprintf(tp, trem, "__cffi_cb_res[__cb_idx] = ");
 		tp += tn;
 		trem -= tn;
 	}
@@ -2287,17 +2358,7 @@ RING_FUNC(ring_cffi_callback)
 			tp += tn;
 			trem -= tn;
 		}
-
-		char var_name[32];
-		snprintf(var_name, sizeof(var_name), "__cb_arg%d", i);
-
-		if (cb->arg_var_names) {
-			cb->arg_var_names[i] = ring_state_malloc(ctx->ring_state, strlen(var_name) + 1);
-			if (cb->arg_var_names[i])
-				strcpy(cb->arg_var_names[i], var_name);
-		}
-
-		tn = snprintf(tp, trem, "%s", var_name);
+		tn = snprintf(tp, trem, "__cffi_cb_args[__cb_idx][%d]", i + 1);
 		tp += tn;
 		trem -= tn;
 	}
@@ -3323,8 +3384,7 @@ finish_func:
 			for (int i = 0; i < param_count; i++)
 				pcopy[i] = params[i];
 		}
-		FFI_Function *func =
-			ffi_function_create(p->ctx, fptr, ret_ffi, pcopy, param_count);
+		FFI_Function *func = ffi_function_create(p->ctx, fptr, ret_ffi, pcopy, param_count);
 		if (func) {
 			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, func);
 			ring_list_addcustomringpointer_gc(p->ctx->ring_state, p->ctx->gc_list, func,
@@ -3655,13 +3715,27 @@ RING_FUNC(ring_cffi_varcall)
 					storage_ptr += sizeof(double);
 				}
 			} else if (is_str) {
-				if (!(i < fixed_count && func->type->param_types)) {
-					arg_types[i] = &ffi_type_pointer;
-				}
 				const char *str =
 					aArgs ? ring_list_getstring(aArgs, i + 1) : RING_API_GETSTRING(param_idx);
-				*(const char **)storage_ptr = str;
-				storage_ptr += sizeof(void *);
+				if (i < fixed_count && func->type->param_types &&
+					ffi_is_64bit_int(func->type->param_types[i]->kind)) {
+					FFI_Type *ptype = func->type->param_types[i];
+					if (ptype->kind == FFI_KIND_UINT64 || ptype->kind == FFI_KIND_ULONGLONG ||
+						(ptype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
+						(ptype->kind == FFI_KIND_UINTPTR_T && sizeof(uintptr_t) == 8) ||
+						(ptype->kind == FFI_KIND_ULONG && sizeof(unsigned long) == 8)) {
+						*(uint64_t *)storage_ptr = (uint64_t)strtoull(str, NULL, 10);
+					} else {
+						*(int64_t *)storage_ptr = (int64_t)strtoll(str, NULL, 10);
+					}
+					storage_ptr += ptype->size;
+				} else {
+					if (!(i < fixed_count && func->type->param_types)) {
+						arg_types[i] = &ffi_type_pointer;
+					}
+					*(const char **)storage_ptr = str;
+					storage_ptr += sizeof(void *);
+				}
 			} else if (is_ptr) {
 				if (!(i < fixed_count && func->type->param_types)) {
 					arg_types[i] = &ffi_type_pointer;

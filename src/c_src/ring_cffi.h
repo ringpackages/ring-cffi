@@ -178,7 +178,6 @@ struct FFI_Callback {
 	ffi_cif cif;
 	ffi_type **ffi_arg_types;
 	char *call_buf;
-	char **arg_var_names;
 };
 
 /* ============================================================
