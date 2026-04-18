@@ -32,7 +32,7 @@
  *       ? invoke(oStrlen, pStr)
  *   }
  */
-class FFI
+ class FFI
 
     self.pLib = NULL
 
@@ -443,6 +443,86 @@ class FFI
 
     /*
      * ========================================
+     * Dynamic Binding
+     * ========================================
+     */
+
+    /**
+     * Binds a C function as a method on the FFI object using addMethod().
+     * After calling bind(), the function can be called as oFFI.name(args).
+     *
+     * Example:
+     *   oFFI = new FFI("libc.so.6")
+     *   oFFI.bind("abs", "int", ["int"])
+     *   ? oFFI.abs(-42)
+     *
+     * @param cName Name of the C function in the library.
+     * @param cRetType Return type (e.g., "int", "void", "ptr").
+     * @param aArgTypes Optional list of argument type strings.
+     * @return FFI_Function object that was bound.
+     * @raises Error if the library is not loaded or binding fails.
+     */
+    func bind cName, cRetType, aArgTypes
+        if pLib = NULL
+            raise("No library loaded. Call loadLib() first.")
+        ok
+        oFunc = cFunc(cName, cRetType, aArgTypes)
+        cFuncAttr = "__cffi_bm_" + cName
+        addattribute(self, cFuncAttr)
+        setattribute(self, cFuncAttr, oFunc)
+        if isNull(aArgTypes)
+            nArgs = 0
+        else
+            nArgs = len(aArgTypes)
+        ok
+        cParams = bindParamList(nArgs)
+        if nArgs = 0
+            cInvoke = "cffi_invoke(getattribute(self, '" + cFuncAttr + "'))"
+        else
+            cInvoke = "cffi_invoke(getattribute(self, '" + cFuncAttr + "'), [" + bindArgRefs(nArgs) + "])"
+        ok
+        cFuncName = "__cffi_m_" + cName
+        eval(print2str(`func #{cFuncName}(#{cParams}) { return #{cInvoke} }`))
+        addMethod(self, cName, cFuncName)
+        return oFunc
+
+    /**
+     * Binds a single C function as a native Ring function using
+     * ring_vm_funcregister2(). No eval/runcode overhead per call.
+     *
+     *   oFFI.bindNative("abs", "int", ["int"])
+     *   ? abs(-42)
+     *
+     * @param cName Name of the C function in the library.
+     * @param cRetType Return type (e.g., "int", "void", "ptr").
+     * @param aArgTypes Optional list of argument type strings.
+     * @return 1 on success.
+     * @raises Error if the library is not loaded.
+     */
+    func bindNative cName, cRetType, aArgTypes
+        if pLib = NULL
+            raise("No library loaded. Call loadLib() first.")
+        ok
+        if isNull(aArgTypes)
+            return cffi_bind(pLib, cName, cRetType)
+        ok
+        return cffi_bind(pLib, cName, cRetType, aArgTypes)
+
+    /**
+     * Binds ALL functions declared via cdef() as native Ring functions.
+     * Uses ring_vm_funcregister2() for each — no eval overhead per call.
+     *
+     *   oFFI.cdef(pLib, "int abs(int); long labs(long);")
+     *   oFFI.bindAll()
+     *   ? abs(-42)   # native call
+     *
+     * @return Number of functions registered.
+     */
+    func bindAll
+        return cffi_bind()
+
+    /*
+     * ========================================
      * C Definition Parser
      * ========================================
      */
@@ -475,3 +555,50 @@ class FFI
      */
     func strError
         return cffi_strerror()
+
+
+    private
+
+    /*
+     * ========================================
+     * Private Helpers
+     * ========================================
+     */
+
+    /**
+     * Generates a comma-separated parameter list for a generated function.
+     * E.g. bindParamList(3) returns "a, b, c"
+     * @param nCount Number of parameters.
+     * @return Parameter list string.
+     */
+    func bindParamList nCount
+        if nCount = 0
+            return ""
+        ok
+        cParams = ""
+        for nI = 1 to nCount
+            if nI > 1
+                cParams += ", "
+            ok
+            cParams += char(96 + nI)
+        next
+        return cParams
+
+    /**
+     * Generates a comma-separated argument reference list for cffi_invoke().
+     * E.g. bindArgRefs(3) returns "a, b, c"
+     * @param nCount Number of arguments.
+     * @return Argument reference string.
+     */
+    func bindArgRefs nCount
+        if nCount = 0
+            return ""
+        ok
+        cRefs = ""
+        for nI = 1 to nCount
+            if nI > 1
+                cRefs += ", "
+            ok
+            cRefs += char(96 + nI)
+        next
+        return cRefs
