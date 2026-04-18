@@ -28,7 +28,11 @@ jobs:
 
   test:
     needs: [check-c-changes]
-    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'push' && needs.check-c-changes.outputs.should-run == 'true') }}
+    if: >-
+      ${{
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (github.event_name == 'push' && needs.check-c-changes.result == 'success' && needs.check-c-changes.outputs.should-run == 'true')
+      }}
     strategy:
       matrix:
         os: [ macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest ]
