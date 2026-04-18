@@ -331,6 +331,8 @@ class CFFITest
 		? ""
 
 		? "Testing Dynamic Binding..."
+		run("test_cffi_bind_single", :test_cffi_bind_single)
+		run("test_cffi_bind_batch", :test_cffi_bind_batch)
 		run("test_bind_method", :test_bind_method)
 		run("test_bind_native", :test_bind_native)
 		run("test_bind_all", :test_bind_all)
@@ -1391,6 +1393,19 @@ class CFFITest
 		ok
 
 	# ==================== Dynamic Binding Tests ====================
+
+	func test_cffi_bind_single
+		pLib = cffi_load(cLibcPath)
+		cffi_bind(pLib, "abs", "int", ["int"])
+		assertEq(abs(-42), 42, "cffi_bind() should register native abs()")
+
+	func test_cffi_bind_batch
+		pLib = cffi_load(cLibcPath)
+		cffi_cdef(pLib, "long labs(long); int atoi(const char*);")
+		nCount = cffi_bind()
+		assert(nCount >= 2, "cffi_bind() with no args should register all cdef functions")
+		assertEq(labs(-123456), 123456, "cffi_bind() batch should register native labs()")
+		assertEq(atoi(cffi_string("777")), 777, "cffi_bind() batch should register native atoi()")
 
 	func test_bind_method
 		oTest = new FFI(cLibcPath)
