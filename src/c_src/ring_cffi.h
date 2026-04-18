@@ -206,6 +206,9 @@ struct FFI_Context {
 	/* Parsed type cache (interning) */
 	HashTable *type_cache;
 
+	/* Functions from cdef declarations / native bindings (name -> FFI_Function*) */
+	HashTable *cdef_funcs;
+
 	/* GC Tracking List */
 	List *gc_list;
 

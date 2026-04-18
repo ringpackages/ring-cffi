@@ -201,6 +201,7 @@ FFI_Context *ffi_context_new(RingState *state, VM *vm)
 	ctx->unions = ring_hashtable_new_gc(state);
 	ctx->enums = ring_hashtable_new_gc(state);
 	ctx->type_cache = ring_hashtable_new_gc(state);
+	ctx->cdef_funcs = ring_hashtable_new_gc(state);
 	ctx->gc_list = ring_list_new_gc(state, 0);
 
 	g_ffi_ctx = ctx;
@@ -827,6 +828,8 @@ static void ffi_context_free(void *state, void *ptr)
 		ring_hashtable_delete_gc(pRingState, ctx->enums);
 	if (ctx->type_cache)
 		ring_hashtable_delete_gc(pRingState, ctx->type_cache);
+	if (ctx->cdef_funcs)
+		ring_hashtable_delete_gc(pRingState, ctx->cdef_funcs);
 
 	if (ctx->gc_list)
 		ring_list_delete_gc(pRingState, ctx->gc_list);
@@ -870,6 +873,18 @@ static FFI_Context *get_or_create_context(void *pPointer)
 	ring_vm_gc_setfreefunc(pItem, ffi_context_free);
 
 	return g_ffi_ctx;
+}
+
+static char *ffi_lowerdup(FFI_Context *ctx, const char *str)
+{
+	char *dup = (char *)ring_state_malloc(ctx->ring_state, strlen(str) + 1);
+	if (!dup)
+		return NULL;
+	for (int i = 0; str[i]; i++)
+		dup[i] = tolower((unsigned char)str[i]);
+	dup[strlen(str)] = '\0';
+	ring_list_addcustomringpointer_gc(ctx->ring_state, ctx->gc_list, dup, ffi_gc_free_ptr);
+	return dup;
 }
 
 RING_FUNC(ring_cffi_load)
@@ -1433,43 +1448,21 @@ RING_FUNC(ring_cffi_funcptr)
 	RING_API_RETMANAGEDCPOINTER(func, "FFI_Function", ffi_gc_free_func);
 }
 
-RING_FUNC(ring_cffi_invoke)
+static int ffi_call_function(FFI_Context *ctx, VM *pVM, FFI_Function *func, List *aArgs,
+							 int api_offset)
 {
-	if (RING_API_PARACOUNT < 1) {
-		RING_API_ERROR("ffi_invoke(func [, args...]) requires at least 1 parameter");
-		return;
-	}
-
-	if (!RING_API_ISCPOINTER(1)) {
-		RING_API_ERROR("ffi_invoke: first parameter must be a function handle");
-		return;
-	}
-
-	FFI_Context *ctx = get_or_create_context(pPointer);
-	List *pList = RING_API_GETLIST(1);
-	FFI_Function *func = (FFI_Function *)ring_list_getpointer(pList, RING_CPOINTER_POINTER);
-	if (!func || !func->cif_prepared) {
-		RING_API_ERROR("ffi_invoke: invalid function handle");
-		return;
-	}
-
 	int arg_count;
-	List *aArgs = NULL;
-
-	if (RING_API_PARACOUNT >= 2 && RING_API_ISLIST(2) && !RING_API_ISCPOINTER(2)) {
-		aArgs = RING_API_GETLIST(2);
+	if (aArgs)
 		arg_count = ring_list_getsize(aArgs);
-	} else {
-		arg_count = RING_API_PARACOUNT - 1;
-	}
-	int expected_count = func->type->param_count;
+	else
+		arg_count = ring_vm_api_paracount((void *)pVM) - api_offset + 1;
 
-	if (arg_count != expected_count) {
-		char err[512];
-		snprintf(err, sizeof(err), "ffi_invoke: expected %d arguments, got %d", expected_count,
+	if (arg_count != func->type->param_count) {
+		char err[256];
+		snprintf(err, sizeof(err), "expected %d arguments, got %d", func->type->param_count,
 				 arg_count);
-		RING_API_ERROR(err);
-		return;
+		ring_vm_error(pVM, err);
+		return -1;
 	}
 
 	void **arg_values = NULL;
@@ -1493,12 +1486,12 @@ RING_FUNC(ring_cffi_invoke)
 		arg_values = (void **)ring_state_malloc(ctx->ring_state, sizeof(void *) * arg_count);
 
 		if (!arg_storage || !arg_values) {
-			RING_API_ERROR("ffi_invoke: out of memory");
+			ring_vm_error(pVM, "out of memory");
 			if (arg_storage)
 				ring_state_free(ctx->ring_state, arg_storage);
 			if (arg_values)
 				ring_state_free(ctx->ring_state, arg_values);
-			return;
+			return -1;
 		}
 
 		size_t current_offset = 0;
@@ -1509,7 +1502,7 @@ RING_FUNC(ring_cffi_invoke)
 			arg_values[i] = (char *)arg_storage + current_offset;
 			char *storage_ptr = (char *)arg_values[i];
 
-			int param_idx = aArgs ? 0 : (2 + i);
+			int param_idx = aArgs ? 0 : (api_offset + i);
 
 			if (ptype->kind == FFI_KIND_POINTER || ptype->pointer_depth > 0) {
 				void *ptr_val = NULL;
@@ -1525,43 +1518,41 @@ RING_FUNC(ring_cffi_invoke)
 							   ring_list_getdouble(aArgs, i + 1) == 0) {
 						ptr_val = NULL;
 					} else {
-						RING_API_ERROR("ffi_invoke: expected pointer argument");
-						ring_state_free(ctx->ring_state, arg_storage);
-						ring_state_free(ctx->ring_state, arg_values);
-						return;
+						ring_vm_error(pVM, "expected pointer argument");
+						goto cleanup;
 					}
 				} else {
-					if (RING_API_ISCPOINTER(param_idx)) {
-						List *argList = RING_API_GETLIST(param_idx);
+					if (ring_vm_api_iscpointer((void *)pVM, param_idx)) {
+						List *argList = ring_vm_api_getlist((void *)pVM, param_idx);
 						ptr_val = ring_list_getpointer(argList, RING_CPOINTER_POINTER);
 						ptr_type = ring_list_getstring(argList, RING_CPOINTER_TYPE);
-					} else if (RING_API_ISSTRING(param_idx)) {
-						ptr_val = (void *)RING_API_GETSTRING(param_idx);
-					} else if (RING_API_ISNUMBER(param_idx) && RING_API_GETNUMBER(param_idx) == 0) {
+					} else if (ring_vm_api_isstring((void *)pVM, param_idx)) {
+						ptr_val = (void *)ring_vm_api_getstring((void *)pVM, param_idx);
+					} else if (ring_vm_api_isnumber((void *)pVM, param_idx) &&
+							   ring_vm_api_getnumber((void *)pVM, param_idx) == 0) {
 						ptr_val = NULL;
 					} else {
-						RING_API_ERROR("ffi_invoke: expected pointer argument");
-						ring_state_free(ctx->ring_state, arg_storage);
-						ring_state_free(ctx->ring_state, arg_values);
-						return;
+						ring_vm_error(pVM, "expected pointer argument");
+						goto cleanup;
 					}
 				}
 
-				if (ptr_type && strcmp(ptr_type, "FFI_Callback") == 0 && ptr_val) {
+				if (ptr_type && strcmp(ptr_type, "FFI_Callback") == 0 && ptr_val)
 					ptr_val = ((FFI_Callback *)ptr_val)->code_ptr;
-				}
 
 				*(void **)storage_ptr = ptr_val;
 				current_offset += sizeof(void *);
 				current_offset = FFI_ALIGN(current_offset, 16);
-			} else if (aArgs ? ring_list_isdouble(aArgs, i + 1) : RING_API_ISNUMBER(param_idx)) {
-				double val =
-					aArgs ? ring_list_getdouble(aArgs, i + 1) : RING_API_GETNUMBER(param_idx);
+			} else if (aArgs ? ring_list_isdouble(aArgs, i + 1)
+							 : ring_vm_api_isnumber((void *)pVM, param_idx)) {
+				double val = aArgs ? ring_list_getdouble(aArgs, i + 1)
+								   : ring_vm_api_getnumber((void *)pVM, param_idx);
 				ffi_write_typed_value(storage_ptr, ptype, val);
 				current_offset += ptype->size > 0 ? ptype->size : sizeof(int);
-			} else if (aArgs ? ring_list_isstring(aArgs, i + 1) : RING_API_ISSTRING(param_idx)) {
-				const char *str =
-					aArgs ? ring_list_getstring(aArgs, i + 1) : RING_API_GETSTRING(param_idx);
+			} else if (aArgs ? ring_list_isstring(aArgs, i + 1)
+							 : ring_vm_api_isstring((void *)pVM, param_idx)) {
+				const char *str = aArgs ? ring_list_getstring(aArgs, i + 1)
+										: ring_vm_api_getstring((void *)pVM, param_idx);
 				if (ffi_is_64bit_int(ptype->kind)) {
 					if (ptype->kind == FFI_KIND_UINT64 || ptype->kind == FFI_KIND_ULONGLONG ||
 						(ptype->kind == FFI_KIND_SIZE_T && sizeof(size_t) == 8) ||
@@ -1573,46 +1564,80 @@ RING_FUNC(ring_cffi_invoke)
 					}
 					current_offset += ptype->size;
 				} else {
-					RING_API_ERROR("ffi_invoke: type mismatch, string passed to "
-								   "non-pointer/non-64bit parameter");
-					ring_state_free(ctx->ring_state, arg_storage);
-					ring_state_free(ctx->ring_state, arg_values);
-					return;
+					ring_vm_error(
+						pVM, "type mismatch, string passed to non-pointer/non-64bit parameter");
+					goto cleanup;
 				}
 			} else {
-				RING_API_ERROR("ffi_invoke: unsupported argument type");
-				ring_state_free(ctx->ring_state, arg_storage);
-				ring_state_free(ctx->ring_state, arg_values);
-				return;
+				ring_vm_error(pVM, "unsupported argument type");
+				goto cleanup;
 			}
 		}
 	}
 
-	union {
-		ffi_arg u;
-		int8_t i8;
-		uint8_t u8;
-		int16_t i16;
-		uint16_t u16;
-		int32_t i32;
-		uint32_t u32;
-		int64_t i64;
-		uint64_t u64;
-		float f;
-		double d;
-		long double ld;
-		void *p;
-	} result;
+	{
+		union {
+			ffi_arg u;
+			int8_t i8;
+			uint8_t u8;
+			int16_t i16;
+			uint16_t u16;
+			int32_t i32;
+			uint32_t u32;
+			int64_t i64;
+			uint64_t u64;
+			float f;
+			double d;
+			long double ld;
+			void *p;
+		} result;
 
-	memset(&result, 0, sizeof(result));
-	ffi_call(&func->cif, FFI_FN(func->func_ptr), &result, arg_values);
+		memset(&result, 0, sizeof(result));
+		ffi_call(&func->cif, FFI_FN(func->func_ptr), &result, arg_values);
 
+		if (arg_storage)
+			ring_state_free(ctx->ring_state, arg_storage);
+		if (arg_values)
+			ring_state_free(ctx->ring_state, arg_values);
+
+		ffi_push_return_value(pVM, &result, func->type->return_type);
+		return 0;
+	}
+
+cleanup:
 	if (arg_storage)
 		ring_state_free(ctx->ring_state, arg_storage);
 	if (arg_values)
 		ring_state_free(ctx->ring_state, arg_values);
+	return -1;
+}
 
-	ffi_push_return_value((VM *)pPointer, &result, func->type->return_type);
+RING_FUNC(ring_cffi_invoke)
+{
+	if (RING_API_PARACOUNT < 1) {
+		RING_API_ERROR("ffi_invoke(func [, args...]) requires at least 1 parameter");
+		return;
+	}
+
+	if (!RING_API_ISCPOINTER(1)) {
+		RING_API_ERROR("ffi_invoke: first parameter must be a function handle");
+		return;
+	}
+
+	FFI_Context *ctx = get_or_create_context(pPointer);
+	List *pList = RING_API_GETLIST(1);
+	FFI_Function *func = (FFI_Function *)ring_list_getpointer(pList, RING_CPOINTER_POINTER);
+	if (!func || !func->cif_prepared) {
+		RING_API_ERROR("ffi_invoke: invalid function handle");
+		return;
+	}
+
+	List *aArgs = NULL;
+	if (RING_API_PARACOUNT >= 2 && RING_API_ISLIST(2) && !RING_API_ISCPOINTER(2)) {
+		aArgs = RING_API_GETLIST(2);
+	}
+
+	ffi_call_function(ctx, (VM *)pPointer, func, aArgs, 2);
 }
 
 RING_FUNC(ring_cffi_sym)
@@ -3416,6 +3441,9 @@ finish_func:
 			ring_list_addpointer_gc(p->ctx->ring_state, p->result_list, func);
 			ring_list_addcustomringpointer_gc(p->ctx->ring_state, p->ctx->gc_list, func,
 											  ffi_gc_free_func);
+			for (int i = 0; func_name[i]; i++)
+				func_name[i] = tolower((unsigned char)func_name[i]);
+			ring_hashtable_newpointer_gc(p->ctx->ring_state, p->ctx->cdef_funcs, func_name, func);
 			p->decl_count++;
 		} else {
 			p->decl_count++;
@@ -3843,6 +3871,138 @@ RING_FUNC(ring_cffi_varcall)
 	ffi_push_return_value((VM *)pPointer, &result, func->type->return_type);
 }
 
+static void ffi_trampoline(void *pPointer)
+{
+	VM *pVM = (VM *)pPointer;
+	FFI_Context *ctx = get_or_create_context(pPointer);
+	if (!ctx) {
+		RING_API_ERROR("no FFI context");
+		return;
+	}
+
+	const char *func_name = pVM->aFuncCall[pVM->nCurrentFuncCall].cName;
+	if (!func_name) {
+		RING_API_ERROR("cannot determine function name");
+		return;
+	}
+
+	FFI_Function *func =
+		(FFI_Function *)ring_hashtable_findpointer(ctx->cdef_funcs, (char *)func_name);
+	if (!func || !func->cif_prepared) {
+		RING_API_ERROR("bound function not found");
+		return;
+	}
+
+	ffi_call_function(ctx, pVM, func, NULL, 1);
+}
+
+RING_FUNC(ring_cffi_bind)
+{
+	FFI_Context *ctx = get_or_create_context(pPointer);
+	VM *vm = (VM *)pPointer;
+
+	if (RING_API_PARACOUNT == 0) {
+		if (!ctx || !ctx->cdef_funcs) {
+			RING_API_ERROR("ffi_bind: no FFI context or no cdef declarations");
+			return;
+		}
+		int count = 0;
+		for (unsigned int bucket = 0; bucket < ctx->cdef_funcs->nLinkedLists; bucket++) {
+			HashItem *item = ctx->cdef_funcs->pArray[bucket];
+			while (item) {
+				if (item->nItemType == RING_HASHITEMTYPE_POINTER && item->cKey) {
+					FFI_Function *func = (FFI_Function *)item->HashValue.pValue;
+					if (func && func->cif_prepared) {
+						ring_vm_funcregister2(vm->pRingState, item->cKey,
+											  ffi_trampoline);
+						count++;
+					}
+				}
+				item = item->pNext;
+			}
+		}
+		RING_API_RETNUMBER(count);
+		return;
+	}
+
+	if (RING_API_PARACOUNT < 3) {
+		RING_API_ERROR("ffi_bind(lib, name, rettype [, argtypes_list]) requires "
+					   "at least 3 parameters, or 0 to bind all cdef functions");
+		return;
+	}
+
+	if (!RING_API_ISCPOINTER(1)) {
+		RING_API_ERROR("ffi_bind: first parameter must be a library handle");
+		return;
+	}
+	if (!RING_API_ISSTRING(2) || !RING_API_ISSTRING(3)) {
+		RING_API_ERROR("ffi_bind: name and return type must be strings");
+		return;
+	}
+
+	List *pList = RING_API_GETLIST(1);
+	FFI_Library *lib = (FFI_Library *)ring_list_getpointer(pList, RING_CPOINTER_POINTER);
+	if (!lib) {
+		RING_API_ERROR("ffi_bind: invalid library handle");
+		return;
+	}
+
+	const char *func_name = RING_API_GETSTRING(2);
+	const char *ret_type_str = RING_API_GETSTRING(3);
+
+	FFI_Type *ret_type = ffi_type_parse(ctx, ret_type_str);
+	if (!ret_type) {
+		RING_API_ERROR("ffi_bind: unknown return type");
+		return;
+	}
+
+	int param_count = 0;
+	FFI_Type **param_types = NULL;
+
+	if (RING_API_PARACOUNT >= 4 && RING_API_ISLIST(4)) {
+		List *argTypes = RING_API_GETLIST(4);
+		param_types = parse_type_list(ctx, argTypes, &param_count);
+		if (!param_types && param_count < 0) {
+			RING_API_ERROR("ffi_bind: parameter types must be valid strings");
+			return;
+		}
+	}
+
+	void *func_ptr = ffi_library_symbol(lib, func_name);
+	if (!func_ptr) {
+		ffi_set_error(ctx, "Symbol '%s' not found in library", func_name);
+		RING_API_ERROR(ffi_get_error(ctx));
+		if (param_types)
+			ring_state_free(ctx->ring_state, param_types);
+		return;
+	}
+
+	FFI_Function *func = ffi_function_create(ctx, func_ptr, ret_type, param_types, param_count);
+	if (!func) {
+		RING_API_ERROR(ffi_get_error(ctx));
+		if (param_types)
+			ring_state_free(ctx->ring_state, param_types);
+		return;
+	}
+
+	if (param_types)
+		ring_state_free(ctx->ring_state, param_types);
+
+	ring_list_addcustomringpointer_gc(ctx->ring_state, ctx->gc_list, func, ffi_gc_free_func);
+
+	char *lower_name = ffi_lowerdup(ctx, func_name);
+	if (!lower_name) {
+		RING_API_ERROR("ffi_bind: out of memory");
+		return;
+	}
+
+	ring_hashtable_newpointer_gc(ctx->ring_state, ctx->cdef_funcs, lower_name, func);
+
+	ring_vm_funcregister2(vm->pRingState, lower_name, ffi_trampoline);
+
+	RING_API_RETNUMBER(1);
+}
+
 RING_LIBINIT
 {
 #ifdef _WIN32
@@ -3890,4 +4050,5 @@ RING_LIBINIT
 	RING_API_REGISTER("cffi_varfunc", ring_cffi_varfunc);
 	RING_API_REGISTER("cffi_varcall", ring_cffi_varcall);
 	RING_API_REGISTER("cffi_cdef", ring_cffi_cdef);
+	RING_API_REGISTER("cffi_bind", ring_cffi_bind);
 }
