@@ -71,6 +71,9 @@ func isMusl
 	cOutput = systemCmd("sh -c 'ldd 2>&1'")
 	return substr(cOutput, "musl") > 0
 
+func cmp_int pA, pB
+	return cffi_get(pA, "int") - cffi_get(pB, "int")
+
 class CFFITest
 
 	nTestsRun = 0
@@ -146,7 +149,7 @@ class CFFITest
 
 	func runAllTests
 		? "========================================"
-		? "  Running CFFI Extension Test Suite"
+		? "     Ring CFFI Extension Test Suite     "
 		? "========================================" + nl
 
 		? "Testing Library Loading..."
@@ -178,6 +181,7 @@ class CFFITest
 		run("test_ptr_get_set_int", :test_ptr_get_set_int)
 		run("test_ptr_get_set_double", :test_ptr_get_set_double)
 		run("test_ptr_get_set_i64", :test_ptr_get_set_i64)
+		run("test_i64_array_index", :test_i64_array_index)
 		run("test_ptr_offset", :test_ptr_offset)
 		run("test_deref", :test_deref)
 		? ""
@@ -194,6 +198,7 @@ class CFFITest
 
 		? "Testing Function Pointers..."
 		run("test_funcptr", :test_funcptr)
+		run("test_funcptr_from_library", :test_funcptr_from_library)
 		? ""
 
 		? "Testing Struct Operations..."
@@ -203,12 +208,14 @@ class CFFITest
 		run("test_struct_field_offset", :test_struct_field_offset)
 		run("test_struct_size", :test_struct_size)
 		run("test_nested_struct", :test_nested_struct)
+		run("test_struct_cdef_function", :test_struct_cdef_function)
 		? ""
 
 		? "Testing Union Operations..."
 		run("test_union_define", :test_union_define)
 		run("test_union_new", :test_union_new)
 		run("test_union_size", :test_union_size)
+		run("test_union_cdef_type_punning", :test_union_cdef_type_punning)
 		? ""
 
 		? "Testing Enum Operations..."
@@ -219,6 +226,7 @@ class CFFITest
 		? "Testing Callbacks..."
 		run("test_callback_simple", :test_callback_simple)
 		run("test_callback_with_args", :test_callback_with_args)
+		run("test_callback_qsort", :test_callback_qsort)
 		? ""
 
 		? "Testing Variadic Functions..."
@@ -281,6 +289,9 @@ class CFFITest
 		? "Testing Error Handling..."
 		run("test_errno", :test_errno)
 		run("test_strerror", :test_strerror)
+		run("test_error_typeof_unknown", :test_error_typeof_unknown)
+		run("test_error_null_ptr_get", :test_error_null_ptr_get)
+		run("test_error_field_nonexistent", :test_error_field_nonexistent)
 		? ""
 
 		? "Testing OOP FFI Class..."
@@ -289,6 +300,7 @@ class CFFITest
 		run("test_ffi_class_cFunc", :test_ffi_class_cFunc)
 		run("test_ffi_class_funcPtr", :test_ffi_class_funcPtr)
 		run("test_ffi_class_invoke", :test_ffi_class_invoke)
+		run("test_invoke_no_args", :test_invoke_no_args)
 		run("test_ffi_class_varFunc", :test_ffi_class_varFunc)
 		run("test_ffi_class_varcall", :test_ffi_class_varcall)
 		run("test_ffi_class_alloc", :test_ffi_class_alloc)
@@ -301,6 +313,7 @@ class CFFITest
 		run("test_ffi_class_i64GetSet", :test_ffi_class_i64GetSet)
 		run("test_ffi_class_deref", :test_ffi_class_deref)
 		run("test_ffi_class_derefTyped", :test_ffi_class_derefTyped)
+		run("test_derefTyped", :test_derefTyped)
 		run("test_ffi_class_offset", :test_ffi_class_offset)
 		run("test_ffi_class_string", :test_ffi_class_string)
 		run("test_ffi_class_toString", :test_ffi_class_toString)
@@ -336,6 +349,15 @@ class CFFITest
 		run("test_bind_method", :test_bind_method)
 		run("test_bind_native", :test_bind_native)
 		run("test_bind_all", :test_bind_all)
+		run("test_bind_2param", :test_bind_2param)
+		run("test_bind_3param", :test_bind_3param)
+		run("test_bind_double_ret", :test_bind_double_ret)
+		run("test_bind_variadic_bindAll", :test_bind_variadic_bindAll)
+		run("test_bind_variadic_call_int", :test_bind_variadic_call_int)
+		run("test_bind_variadic_call_str", :test_bind_variadic_call_str)
+		run("test_bind_variadic_call_double", :test_bind_variadic_call_double)
+		run("test_bind_variadic_snprintf", :test_bind_variadic_snprintf)
+		run("test_bind_variadic_mixed_batch", :test_bind_variadic_mixed_batch)
 		? ""
 
 		# Cleanup
@@ -500,6 +522,15 @@ class CFFITest
 		cResult = cffi_get_i64(pI64)
 		assertEq(cResult, cValue, "get/set i64 should work for min negative")
 
+	func test_i64_array_index
+		pArr = cffi_new("int64", 3)
+		cffi_set_i64(pArr, "100", 0)
+		cffi_set_i64(pArr, "200", 1)
+		cffi_set_i64(pArr, "300", 2)
+		assertEq(cffi_get_i64(pArr, 0), "100", "i64Get index 0")
+		assertEq(cffi_get_i64(pArr, 1), "200", "i64Get index 1")
+		assertEq(cffi_get_i64(pArr, 2), "300", "i64Get index 2")
+
 	func test_ptr_offset
 		pArr = cffi_new("int", 3)
 		nSize = cffi_sizeof("int")
@@ -521,15 +552,6 @@ class CFFITest
 		pDeref = cffi_deref(pPtr, "ptr")
 		assert(isPointer(pDeref), "cffi_deref with type should return pointer")
 		assertEq(cffi_get(pDeref, "int"), 777, "deref'd pointer should resolve to original value")
-
-	func test_derefTyped
-		pInt = cffi_new("int")
-		cffi_set(pInt, "int", 555)
-		pPtr = cffi_new("ptr")
-		cffi_set(pPtr, "ptr", pInt)
-		pDeref = oFFI.derefTyped(pPtr, "ptr")
-		assert(isPointer(pDeref), "derefTyped should return pointer")
-		assertEq(cffi_get(pDeref, "int"), 555, "derefTyped should resolve correctly")
 
 	# ==================== String Operations Tests ====================
 
@@ -562,6 +584,13 @@ class CFFITest
 		pStr = cffi_string("999")
 		nResult = cffi_invoke(oFunc, pStr)
 		assertEq(nResult, 999, "funcptr + invoke should work")
+
+	func test_funcptr_from_library
+		pLib = cffi_load(cLibcPath)
+		oFunc = cffi_funcptr(pLib, "atoi", "int", ["ptr"])
+		pStr = cffi_string("42")
+		nResult = cffi_invoke(oFunc, pStr)
+		assertEq(nResult, 42, "funcptr from library handle works")
 
 	# ==================== Struct Operation Tests ====================
 
@@ -626,6 +655,35 @@ class CFFITest
 		])
 		assert(true, "Nested struct definition should not crash")
 
+	func test_struct_cdef_function
+		if isWindows()
+			oTest = new FFI("kernel32.dll")
+			oTest.cdef("
+				struct SYSTEMTIME { unsigned short wYear; unsigned short wMonth; unsigned short wDayOfWeek; unsigned short wDay; unsigned short wHour; unsigned short wMinute; unsigned short wSecond; unsigned short wMilliseconds; };
+				void GetSystemTime(struct SYSTEMTIME*);
+			")
+			oTest.bindAll()
+			stType = cffi_typeof("SYSTEMTIME")
+			pSt = cffi_struct_new(stType)
+			GetSystemTime(pSt)
+			pYear = cffi_field(pSt, stType, "wYear")
+			year = cffi_get(pYear, "unsigned short")
+			assert(year >= 2025, "GetSystemTime should return current year")
+		else
+			oTest = new FFI(cLibcPath)
+			oTest.cdef("
+				struct timeval { long tv_sec; long tv_usec; };
+				int gettimeofday(struct timeval*, void*);
+			")
+			oTest.bindAll()
+			tvType = cffi_typeof("timeval")
+			pTv = cffi_struct_new(tvType)
+			gettimeofday(pTv, oTest.nullptr())
+			pSec = cffi_field(pTv, tvType, "tv_sec")
+			sec = cffi_get(pSec, "long")
+			assert(sec > 0, "gettimeofday should return positive tv_sec")
+		ok
+
 	# ==================== Union Operation Tests ====================
 
 	func test_union_define
@@ -652,6 +710,19 @@ class CFFITest
 		])
 		nSize = cffi_union_size(oUnion)
 		assert(nSize >= 8, "Union with double should be at least 8 bytes")
+
+	func test_union_cdef_type_punning
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("
+			union IntFloat { int i; float f; };
+		")
+		uType = cffi_typeof("IntFloat")
+		pU = cffi_union_new(uType)
+		pI = cffi_field(pU, uType, "i")
+		cffi_set(pI, "int", 0x40490FDB)
+		pF = cffi_field(pU, uType, "f")
+		fVal = cffi_get(pF, "float")
+		assert(fVal > 3.14 and fVal < 3.15, "union type pun: int bits -> float value")
 
 	# ==================== Enum Operation Tests ====================
 
@@ -691,6 +762,20 @@ class CFFITest
 
 	func test_callback_handler2 a, b
 		return a + b
+
+	func test_callback_qsort
+		oTest = new FFI(cLibcPath)
+		pArr = oTest.allocArray("int", 5)
+		aVals = [50, 10, 30, 20, 40]
+		for i = 0 to 4
+			pElem = oTest.offset(pArr, i * oTest.sizeof("int"))
+			oTest.ptrSet(pElem, "int", aVals[i + 1])
+		next
+		oCb = oTest.callback("cmp_int", "int", ["ptr", "ptr"])
+		oQsort = oTest.cFunc("qsort", "void", ["ptr", "int", "int", "ptr"])
+		oTest.invoke(oQsort, [pArr, 5, oTest.sizeof("int"), oCb])
+		assertEq(oTest.ptrGet(oTest.offset(pArr, 0 * oTest.sizeof("int")), "int"), 10, "qsort elem 0")
+		assertEq(oTest.ptrGet(oTest.offset(pArr, 4 * oTest.sizeof("int")), "int"), 50, "qsort elem 4")
 
 	# ==================== Variadic Function Tests ====================
 
@@ -1108,6 +1193,30 @@ class CFFITest
 		cMsg = cffi_strerror()
 		assert(isString(cMsg), "cffi_strerror should return string")
 
+	func test_error_typeof_unknown
+		try
+			cffi_typeof("NonexistentTypeXYZ123")
+			raise("Should have failed for unknown type")
+		catch
+		done
+
+	func test_error_null_ptr_get
+		pNull = cffi_nullptr()
+		try
+			cffi_get(pNull, "int")
+			raise("Should have failed on null pointer get")
+		catch
+		done
+
+	func test_error_field_nonexistent
+		oStruct = cffi_struct("ErrTest", [["x", "int"]])
+		pS = cffi_struct_new(oStruct)
+		try
+			cffi_field(pS, oStruct, "nonexistent_xyz")
+			raise("Should have failed for nonexistent field")
+		catch
+		done
+
 	# ==================== OOP FFI Class Tests ====================
 
 	func test_ffi_class_load
@@ -1141,6 +1250,16 @@ class CFFITest
 		pStr = oTest.string("Hello invoke!")
 		nLen = oTest.invoke(oFunc, [pStr])
 		assertEq(nLen, 13, "invoke(strlen) should return correct length")
+
+	func test_invoke_no_args
+		oTest = new FFI(cLibcPath)
+		if isWindows()
+			oFunc = oTest.cFunc("_getpid", "int", NULL)
+		else
+			oFunc = oTest.cFunc("getpid", "int", NULL)
+		ok
+		pid = oTest.invoke(oFunc, NULL)
+		assert(pid > 0, "getpid via invoke with no args should return positive")
 
 	func test_ffi_class_varFunc
 		oTest = new FFI
@@ -1225,6 +1344,15 @@ class CFFITest
 		pDeref = oTest.derefTyped(pPtr, "ptr")
 		assert(isPointer(pDeref), "derefTyped should return pointer")
 		assertEq(oTest.ptrGet(pDeref, "int"), 555, "derefTyped should resolve correctly")
+
+	func test_derefTyped
+		pInt = cffi_new("int")
+		cffi_set(pInt, "int", 555)
+		pPtr = cffi_new("ptr")
+		cffi_set(pPtr, "ptr", pInt)
+		pDeref = oFFI.derefTyped(pPtr, "ptr")
+		assert(isPointer(pDeref), "derefTyped should return pointer")
+		assertEq(cffi_get(pDeref, "int"), 555, "derefTyped should resolve correctly")
 
 	func test_ffi_class_offset
 		oTest = new FFI
@@ -1426,3 +1554,104 @@ class CFFITest
 		nCount = oTest.bindAll()
 		assert(nCount >= 2, "bindAll() should register at least 2 functions")
 		assertEq(abs(-99), 99, "bindAll() should register native abs()")
+
+	func test_bind_2param
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int strcmp(const char*, const char*);")
+		oTest.bindAll()
+		assertEq(strcmp("abc", "abc"), 0, "cdef+bindAll 2-param: strcmp same")
+		assert(strcmp("abc", "def") < 0, "cdef+bindAll 2-param: strcmp diff")
+
+	func test_bind_3param
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("void* memset(void*, int, unsigned long);")
+		oTest.bindAll()
+		pBuf = oTest.allocArray("char", 16)
+		memset(pBuf, 0x41, 8)
+		assertEq(oTest.toString(pBuf), "AAAAAAAA", "cdef+bindAll 3-param: memset")
+
+	func test_bind_double_ret
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("double atof(const char*);")
+		oTest.bindAll()
+		nVal = atof("3.14")
+		assert(nVal > 3.13 and nVal < 3.15, "cdef+bindAll double return: atof")
+
+	func test_bind_variadic_bindAll
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int printf(const char*, ...);")
+		nCount = oTest.bindAll()
+		assert(nCount >= 1, "variadic cdef+bindAll should register at least 1")
+
+	func test_bind_variadic_call_int
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int printf(const char*, ...);")
+		oTest.bindAll()
+		nRet = printf("int: %d" + char(10), 42)
+		assert(nRet >= 0, "variadic call with int arg should return >= 0")
+
+	func test_bind_variadic_call_str
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int printf(const char*, ...);")
+		oTest.bindAll()
+		nRet = printf("str: %s" + char(10), "Ring")
+		assert(nRet >= 0, "variadic call with string arg should return >= 0")
+
+	func test_bind_variadic_call_double
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("int printf(const char*, ...);")
+		oTest.bindAll()
+		nRet = printf("pi=%.2f" + char(10), 3.14)
+		assert(nRet >= 0, "variadic call with double arg should return >= 0")
+
+	func test_bind_variadic_snprintf
+		oTest = new FFI(cLibcPath)
+		if isWindows()
+			oTest.cdef("int _snprintf(char*, unsigned long, const char*, ...);")
+			oTest.bindAll()
+			pBuf = oTest.allocArray("char", 64)
+			_snprintf(pBuf, 64, "%s=%d", "x", 42)
+			assertEq(oTest.toString(pBuf), "x=42", "variadic _snprintf via cdef+bindAll")
+		else
+			oTest.cdef("int snprintf(char*, unsigned long, const char*, ...);")
+			oTest.bindAll()
+			pBuf = oTest.allocArray("char", 64)
+			snprintf(pBuf, 64, "%s=%d", "x", 42)
+			assertEq(oTest.toString(pBuf), "x=42", "variadic snprintf via cdef+bindAll")
+		ok
+
+	func test_bind_variadic_mixed_batch
+		oTest = new FFI(cLibcPath)
+		if isWindows()
+			oTest.cdef("
+				int abs(int);
+				int strcmp(const char*, const char*);
+				int printf(const char*, ...);
+				int _snprintf(char*, unsigned long, const char*, ...);
+			")
+			nCount = oTest.bindAll()
+			assert(nCount >= 4, "mixed variadic+non-variadic bindAll should register >= 4")
+			assertEq(abs(-7), 7, "mixed batch: abs")
+			assertEq(strcmp("x", "x"), 0, "mixed batch: strcmp")
+			nRet = printf("ok: %d" + char(10), 1)
+			assert(nRet >= 0, "mixed batch: printf")
+			pBuf = oTest.allocArray("char", 32)
+			_snprintf(pBuf, 32, "val=%d", 99)
+			assertEq(oTest.toString(pBuf), "val=99", "mixed batch: _snprintf")
+		else
+			oTest.cdef("
+				int abs(int);
+				int strcmp(const char*, const char*);
+				int printf(const char*, ...);
+				int snprintf(char*, unsigned long, const char*, ...);
+			")
+			nCount = oTest.bindAll()
+			assert(nCount >= 4, "mixed variadic+non-variadic bindAll should register >= 4")
+			assertEq(abs(-7), 7, "mixed batch: abs")
+			assertEq(strcmp("x", "x"), 0, "mixed batch: strcmp")
+			nRet = printf("ok: %d" + char(10), 1)
+			assert(nRet >= 0, "mixed batch: printf")
+			pBuf = oTest.allocArray("char", 32)
+			snprintf(pBuf, 32, "val=%d", 99)
+			assertEq(oTest.toString(pBuf), "val=99", "mixed batch: snprintf")
+		ok
