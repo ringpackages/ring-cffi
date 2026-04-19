@@ -301,4 +301,18 @@ char *ffi_string_new(FFI_Context *ctx, const char *str);
 
 #define FFI_ALIGN(size, alignment) (((size) + (alignment) - 1) & ~((alignment) - 1))
 
+#ifdef _WIN64
+#define FFI_VARIADIC_INT_TYPE &ffi_type_sint64
+#define FFI_VARIADIC_INT_SIZE 8
+#elif defined(_WIN32)
+#define FFI_VARIADIC_INT_TYPE &ffi_type_sint
+#define FFI_VARIADIC_INT_SIZE 4
+#elif defined(__LP64__) || defined(__x86_64__) || defined(__aarch64__)
+#define FFI_VARIADIC_INT_TYPE &ffi_type_sint64
+#define FFI_VARIADIC_INT_SIZE 8
+#else
+#define FFI_VARIADIC_INT_TYPE &ffi_type_sint
+#define FFI_VARIADIC_INT_SIZE 4
+#endif
+
 #endif /* RING_CFFI_H */
