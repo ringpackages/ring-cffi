@@ -2523,10 +2523,7 @@ static void ffi_callback_handler(ffi_cif *cif, void *ret, void **args, void *use
 
 		if (ptype->kind == FFI_KIND_POINTER || ptype->pointer_depth > 0) {
 			void *val = *(void **)args[i];
-			List *ptr_list = ring_list_newlist_gc(state, current_args);
-			ring_list_addpointer_gc(state, ptr_list, val);
-			ring_list_addstring_gc(state, ptr_list, "FFI_Ptr");
-			ring_list_addint_gc(state, ptr_list, 0);
+			ring_list_addcpointer_gc(state, current_args, val, "FFI_Ptr");
 		} else if (ffi_is_64bit_int(ptype->kind)) {
 			char buf[32];
 			if (ptype->kind == FFI_KIND_UINT64 || ptype->kind == FFI_KIND_ULONGLONG ||
@@ -2745,7 +2742,9 @@ RING_FUNC(ring_cffi_callback)
 		trem -= tn;
 	}
 
-	snprintf(tp, trem, ")");
+	tn = snprintf(tp, trem, ")");
+	tp += tn;
+	trem -= tn;
 
 	size_t call_len = (size_t)(tp - tmp_buf) + 1;
 	cb->call_buf = ring_state_malloc(ctx->ring_state, call_len);
