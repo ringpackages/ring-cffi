@@ -244,6 +244,15 @@
         return cffi_offset(pPtr, nOffset)
 
     /**
+     * Casts a pointer to a new type label.
+     * @param pPtr Existing FFI pointer.
+     * @param cType New type string for the pointer.
+     * @return New pointer with the same address and updated type.
+     */
+    func cast pPtr, cType
+        return cffi_cast(pPtr, cType)
+
+    /**
      * Invokes a C function wrapper with the given arguments.
      * @param oFunc Function wrapper from cFunc() or funcPtr().
      * @param aArgs List of arguments to pass to the C function.
@@ -298,6 +307,30 @@
      */
     func string cString
         return cffi_string(cString)
+
+    /**
+     * Creates a NULL-terminated array of C strings (char**).
+     * @param aStrings List of Ring strings.
+     * @return Pointer to the char** array.
+     */
+    func stringArray aStrings
+        return cffi_string_array(aStrings)
+
+    /**
+     * Converts a Ring string to a wide (wchar_t*) string.
+     * @param cString Ring string (UTF-8).
+     * @return Pointer to the wchar_t* buffer.
+     */
+    func wstring cString
+        return cffi_wstring(cString)
+
+    /**
+     * Reads a null-terminated wide (wchar_t*) string and converts to Ring string.
+     * @param pPtr Pointer to wchar_t* string.
+     * @return Ring string (UTF-8).
+     */
+    func wtoString pPtr
+        return cffi_wtostring(pPtr)
 
     /*
      * ========================================
