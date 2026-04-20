@@ -184,11 +184,14 @@ class CFFITest
 		run("test_i64_array_index", :test_i64_array_index)
 		run("test_ptr_offset", :test_ptr_offset)
 		run("test_deref", :test_deref)
+		run("test_cast", :test_cast)
 		? ""
 
 		? "Testing String Operations..."
 		run("test_cffi_string", :test_cffi_string)
 		run("test_cffi_tostring", :test_cffi_tostring)
+		run("test_string_array", :test_string_array)
+		run("test_wstring", :test_wstring)
 		? ""
 
 		? "Testing Symbol Resolution..."
@@ -209,6 +212,8 @@ class CFFITest
 		run("test_struct_size", :test_struct_size)
 		run("test_nested_struct", :test_nested_struct)
 		run("test_struct_cdef_function", :test_struct_cdef_function)
+		run("test_nested_field_dot", :test_nested_field_dot)
+		run("test_bitfield_cdef", :test_bitfield_cdef)
 		? ""
 
 		? "Testing Union Operations..."
@@ -553,6 +558,14 @@ class CFFITest
 		assert(isPointer(pDeref), "cffi_deref with type should return pointer")
 		assertEq(cffi_get(pDeref, "int"), 777, "deref'd pointer should resolve to original value")
 
+	func test_cast
+		pBuf = cffi_new("char", 32)
+		pCast = cffi_cast(pBuf, "int")
+		assert(isPointer(pCast), "cffi_cast should return pointer")
+		cffi_set(pCast, "int", 0x41414141)
+		assertEq(cffi_get(pCast, "int"), 0x41414141, "cast ptr should read/write as int")
+		assertEq(cffi_get(pBuf, "char"), 65, "original ptr sees 'A' from int bytes")
+
 	# ==================== String Operations Tests ====================
 
 	func test_cffi_string
@@ -565,6 +578,17 @@ class CFFITest
 		pStr = cffi_string("Hello CFFI!")
 		cResult = cffi_tostring(pStr)
 		assertEq(cResult, "Hello CFFI!", "cffi_tostring should read C string")
+
+	func test_string_array
+		aStrs = ["hello", "world", "ffi"]
+		ppArr = cffi_string_array(aStrs)
+		assertIsPointer(ppArr, "cffi_string_array should return pointer")
+
+	func test_wstring
+		pW = cffi_wstring("Hello")
+		assertIsPointer(pW, "cffi_wstring should return pointer")
+		cBack = cffi_wtostring(pW)
+		assertEq(cBack, "Hello", "wstring roundtrip should preserve string")
 
 	# ==================== Symbol Resolution Tests ====================
 
@@ -683,6 +707,58 @@ class CFFITest
 			sec = cffi_get(pSec, "long")
 			assert(sec > 0, "gettimeofday should return positive tv_sec")
 		ok
+
+	func test_nested_field_dot
+		innerType = cffi_struct("Inner2", [
+			["x", "int"],
+			["y", "int"]
+		])
+		outerType = cffi_struct("Outer2", [
+			["id", "int"],
+			["pos", "Inner2"]
+		])
+		pOuter = cffi_struct_new(outerType)
+		pId = cffi_field(pOuter, outerType, "id")
+		cffi_set(pId, "int", 42)
+		pX = cffi_field(pOuter, outerType, "pos.x")
+		cffi_set(pX, "int", 10)
+		pY = cffi_field(pOuter, outerType, "pos.y")
+		cffi_set(pY, "int", 20)
+		assertEq(cffi_get(cffi_field(pOuter, outerType, "id"), "int"), 42, "nested dot: id")
+		assertEq(cffi_get(pX, "int"), 10, "nested dot: pos.x")
+		assertEq(cffi_get(pY, "int"), 20, "nested dot: pos.y")
+		nOff = cffi_field_offset(outerType, "pos.x")
+		assert(nOff > 0, "nested field_offset: pos.x > 0")
+
+	func test_bitfield_cdef
+		oTest = new FFI(cLibcPath)
+		oTest.cdef("
+			struct Flags {
+				unsigned int a : 3;
+				unsigned int b : 5;
+				unsigned int c : 4;
+				int normal;
+			};
+		")
+		fType = cffi_typeof("Flags")
+		pF = cffi_struct_new(fType)
+		pA = cffi_field(pF, fType, "a")
+		cffi_set(pA, "int", 5)
+		pB = cffi_field(pF, fType, "b")
+		cffi_set(pB, "int", 17)
+		pC = cffi_field(pF, fType, "c")
+		cffi_set(pC, "int", 9)
+		pN = cffi_field(pF, fType, "normal")
+		cffi_set(pN, "int", 99)
+		assertEq(cffi_get(pA, "int"), 5, "bitfield a = 5")
+		assertEq(cffi_get(pB, "int"), 17, "bitfield b = 17")
+		assertEq(cffi_get(pC, "int"), 9, "bitfield c = 9")
+		assertEq(cffi_get(pN, "int"), 99, "normal field after bitfields")
+		cffi_set(pA, "int", 7)
+		assertEq(cffi_get(pA, "int"), 7, "bitfield a max 7")
+		cffi_set(pB, "int", 1)
+		assertEq(cffi_get(pA, "int"), 7, "writing b doesn't corrupt a")
+		assertEq(cffi_get(pB, "int"), 1, "bitfield b = 1 after overwrite")
 
 	# ==================== Union Operation Tests ====================
 
