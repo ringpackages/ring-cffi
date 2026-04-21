@@ -310,6 +310,25 @@ endif()
 
 add_library(ffi_static STATIC ${FFI_SOURCES})
 
+# Propagate Release/RelWithDebInfo optimizations to libffi
+target_compile_options(ffi_static PRIVATE
+    $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:
+        $<$<C_COMPILER_ID:MSVC>:/O2>
+        $<$<NOT:$<C_COMPILER_ID:MSVC>>:-O3>
+        -DNDEBUG
+    >
+)
+
+# Hide libffi internals from the final .so dynsym table (only ring_cffi API should be visible)
+if(NOT MSVC)
+    target_compile_options(ffi_static PRIVATE -fvisibility=hidden)
+endif()
+
+# Enable LTO on libffi so ring_cffi can inline across the static-link boundary
+if(LTO_SUPPORTED)
+    set_property(TARGET ffi_static PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
+
 target_include_directories(ffi_static PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}
