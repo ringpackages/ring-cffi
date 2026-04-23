@@ -69,7 +69,7 @@ new FFI("libm.so.6") { # msvcrt.dll (Windows), libSystem.B.dylib (macOS)
 	# Call a simple function (sqrt)
 	oSqrt = cFunc("sqrt", "double", ["double"])
 	result = invoke(oSqrt, [25.0])
-	? "sqrt(25) = " + result  # 5.0
+	? "sqrt(25) = " + result  # 5
 
 	# Call printf (variadic function)
 	oPrintf = varFunc("printf", "int", ["string"])
@@ -133,7 +133,7 @@ load "cffi.ring"
 
 new FFI {
     # Allocate raw memory
-    pBuf = alloc("char", 8)
+    pBuf = allocArray("char", 8)
 
     # Cast the same address to a different type
     pAsInt = cast(pBuf, "int")
@@ -162,7 +162,7 @@ new FFI {
     ptrSet(field(pEnt, oEnt, "pos.y"), "int", 75)
 
     ? ptrGet(field(pEnt, oEnt, "pos.x"), "int")  # 50
-    ? fieldOffset(oEnt, "pos.x")                  # cumulative offset
+    ? fieldOffset(oEnt, "pos.x")                 # cumulative offset = 4
 }
 ```
 
@@ -174,9 +174,9 @@ load "cffi.ring"
 new FFI("libc.so.6") { # msvcrt.dll (Windows), libSystem.B.dylib (macOS)
     cdef("
         struct Flags {
-            unsigned int a : 3;  # 0–7
-            unsigned int b : 5;  # 0–31
-            unsigned int c : 4;  # 0–15
+            unsigned int a : 3;  // 0–7
+            unsigned int b : 5;  // 0–31
+            unsigned int c : 4;  // 0–15
             int normal;
         };
     ")
